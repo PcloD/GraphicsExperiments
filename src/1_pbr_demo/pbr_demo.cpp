@@ -443,25 +443,25 @@ protected:
         
 		m_device.wait_for_idle();
 
-		saveEnvMap();
+		//saveEnvMap();
 
 		renderIrradianceMap();
 
 		m_device.wait_for_idle();
 
-		saveIrradianceMap();
+		//saveIrradianceMap();
 
 		renderPrefilteredMap();
 
 		m_device.wait_for_idle();
 
-		savePrefilterMap();
+		//savePrefilterMap();
 
 		preintegrateBRDF();
 
 		m_device.wait_for_idle();
 
-		saveBRDF();
+		//saveBRDF();
 
         return true;
     }
