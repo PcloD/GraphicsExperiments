@@ -521,10 +521,10 @@ protected:
         }
         
         vs_str.clear();
-        Utility::ReadText("quad_vs.glsl", vs_str);
+        Utility::ReadText("shader/quad_vs.glsl", vs_str);
         
         fs_str.clear();
-        Utility::ReadText("quad_fs.glsl", fs_str);
+        Utility::ReadText("shader/quad_fs.glsl", fs_str);
         
         m_quadVs = m_device.create_shader(vs_str.c_str(), ShaderType::VERTEX);
         m_quadFs = m_device.create_shader(fs_str.c_str(), ShaderType::FRAGMENT);
@@ -545,10 +545,10 @@ protected:
         }
 
 		vs_str.clear();
-		Utility::ReadText("latlong_vs.glsl", vs_str);
+		Utility::ReadText("shader/latlong_vs.glsl", vs_str);
 
 		fs_str.clear();
-		Utility::ReadText("latlong_fs.glsl", fs_str);
+		Utility::ReadText("shader/latlong_fs.glsl", fs_str);
 
 		m_latlongToCubeVs = m_device.create_shader(vs_str.c_str(), ShaderType::VERTEX);
 		m_latlongToCubeFs = m_device.create_shader(fs_str.c_str(), ShaderType::FRAGMENT);
@@ -569,10 +569,10 @@ protected:
 		}
         
 		vs_str.clear();
-		Utility::ReadText("cubemap_vs.glsl", vs_str);
+		Utility::ReadText("shader/cubemap_vs.glsl", vs_str);
 
 		fs_str.clear();
-		Utility::ReadText("cubemap_fs.glsl", fs_str);
+		Utility::ReadText("shader/cubemap_fs.glsl", fs_str);
 
 		m_cubeMapVs = m_device.create_shader(vs_str.c_str(), ShaderType::VERTEX);
 		m_cubeMapFs = m_device.create_shader(fs_str.c_str(), ShaderType::FRAGMENT);
@@ -593,7 +593,7 @@ protected:
 		}
 
 		fs_str.clear();
-		Utility::ReadText("irradiance_fs.glsl", fs_str);
+		Utility::ReadText("shader/irradiance_fs.glsl", fs_str);
 
 		m_irradianceFs = m_device.create_shader(fs_str.c_str(), ShaderType::FRAGMENT);
 
@@ -613,7 +613,7 @@ protected:
 		}
 
 		fs_str.clear();
-		Utility::ReadText("prefilter_fs.glsl", fs_str);
+		Utility::ReadText("shader/prefilter_fs.glsl", fs_str);
 
 		m_prefilterFs = m_device.create_shader(fs_str.c_str(), ShaderType::FRAGMENT);
 
@@ -633,7 +633,7 @@ protected:
 		}
 
 		fs_str.clear();
-		Utility::ReadText("precompute_fs.glsl", fs_str);
+		Utility::ReadText("shader/precompute_fs.glsl", fs_str);
 
 		m_brdfIntegrateFs = m_device.create_shader(fs_str.c_str(), ShaderType::FRAGMENT);
 
@@ -866,7 +866,7 @@ protected:
 	{
 		stbi_set_flip_vertically_on_load(true);
 		int width, height, nrComponents;
-		float *data = stbi_loadf("newport_loft.hdr", &width, &height, &nrComponents, 0);
+		float *data = stbi_loadf("texture/newport_loft.hdr", &width, &height, &nrComponents, 0);
 
 		Texture2DCreateDesc desc;
 		DW_ZERO_MEMORY(desc);
