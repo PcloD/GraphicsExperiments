@@ -21,6 +21,14 @@
 #define CAMERA_SENSITIVITY 0.02f
 #define CAMERA_ROLL 0.0
 
+#define DRAW_LINE(list, vertices, v0, v1, color)				  \
+if (vertices[v0].visible || vertices[v1].visible)				  \
+{																  \
+	list->PathLineTo(ImVec2(vertices[v0].v.x, vertices[v0].v.y)); \
+	list->PathLineTo(ImVec2(vertices[v1].v.x, vertices[v1].v.y)); \
+	list->PathStroke(color, false);								  \
+}
+
 
 struct Line
 {
@@ -33,11 +41,23 @@ struct Line
     }
 };
 
-const Line kCube[] = {
-    Line(glm::vec3(-1.0f, 1.0f, 1.0f), glm::vec3(1.0f, 1.0f, 1.0f)),
-    Line(glm::vec3(-1.0f, 1.0f, 1.0f), glm::vec3(-1.0f, -1.0f, 1.0f)),
-    Line(glm::vec3(-1.0f, 1.0f, 1.0f), glm::vec3(-1.0f, -1.0f, 1.0f)),
-    Line(glm::vec3(-1.0f, 1.0f, 1.0f), glm::vec3(-1.0f, -1.0f, 1.0f))
+const glm::vec3 kCube[] = {
+   glm::vec3(-1.0f, 1.0f, -1.0f), 
+   glm::vec3(1.0f, 1.0f, -1.0f),
+   glm::vec3(-1.0f, -1.0f, -1.0f),
+   glm::vec3(1.0f, -1.0f, -1.0f),
+   glm::vec3(-1.0f, 1.0f, 1.0f), 
+   glm::vec3(1.0f, 1.0f, 1.0f),
+   glm::vec3(-1.0f, -1.0f, 1.0f), 
+   glm::vec3(1.0f, -1.0f, 1.0f)
+};
+
+// 0-1, 1-3, 3-2, 2-0, 0-4, 4-6, 6-2, 1-5, 5-7, 7-3, 4-5, 6-7 
+
+struct SSVertex
+{
+	bool visible;
+	glm::vec2 v;
 };
 
 class CDLOD : public dw::Application
@@ -60,6 +80,46 @@ public:
         
         return true;
     }
+
+	void drawAABB()
+	{
+		SSVertex verts[8];
+
+		for (int i = 0; i < 8; i++)
+		{
+			const glm::vec3& v0 = kCube[i];
+			glm::vec4 v = m_camera->m_view_projection * glm::vec4(v0.x, v0.y, v0.z, 1.0f);
+			v /= v.w;
+
+			if ((v.x <= 1.0f) && (v.x >= -1.0f) && (v.y <= 1.0f) && (v.y >= -1.0f) && (v.z <= 1.0f) && (v.z >= -1.0f))
+				verts[i].visible = true;
+			else
+				verts[i].visible = false;
+
+			float x = (v.x + 1.0f) / 2.0f;
+			x *= m_width;
+			float y = 1.0f - ((v.y + 1.0f) / 2.0f);
+			y *= m_height;
+
+			verts[i].v = glm::vec2(x, y);
+		}
+
+		ImDrawList* list = ImGui::GetWindowDrawList();
+
+		// 0-1, 1-3, 3-2, 2-0, 0-4, 4-6, 6-2, 1-5, 5-7, 7-3, 4-5, 6-7 
+		DRAW_LINE(list, verts, 0, 1, IM_COL32(0, 255, 0, 255));
+		DRAW_LINE(list, verts, 1, 3, IM_COL32(0, 255, 0, 255));
+		DRAW_LINE(list, verts, 3, 2, IM_COL32(0, 255, 0, 255));
+		DRAW_LINE(list, verts, 2, 0, IM_COL32(0, 255, 0, 255));
+		DRAW_LINE(list, verts, 0, 4, IM_COL32(0, 255, 0, 255));
+		DRAW_LINE(list, verts, 4, 6, IM_COL32(0, 255, 0, 255));
+		DRAW_LINE(list, verts, 6, 2, IM_COL32(0, 255, 0, 255));
+		DRAW_LINE(list, verts, 1, 5, IM_COL32(0, 255, 0, 255));
+		DRAW_LINE(list, verts, 5, 7, IM_COL32(0, 255, 0, 255));
+		DRAW_LINE(list, verts, 7, 3, IM_COL32(0, 255, 0, 255));
+		DRAW_LINE(list, verts, 4, 5, IM_COL32(0, 255, 0, 255));
+		DRAW_LINE(list, verts, 6, 7, IM_COL32(0, 255, 0, 255));
+	}
     
     void update(double delta) override
     {
@@ -76,35 +136,7 @@ public:
         ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
         ImGui::Begin("testing", nullptr, ImVec2(io.DisplaySize.x, io.DisplaySize.y), 0.0f, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoInputs);
         
-        ImDrawList* list = ImGui::GetWindowDrawList();
-        
-        Line a = kCube[0];
-        
-        glm::vec4 a1 = m_camera->m_view_projection * glm::vec4(a.a.x, a.a.y, a.a.z, 1.0f);
-        glm::vec4 a2 = m_camera->m_view_projection * glm::vec4(a.b.x, a.b.y, a.b.z, 1.0f);
-        
-        a1 /= a1.w;
-        a2 /= a2.w;
-        
-        if ((a1.x <= 1.0f) && (a1.x >= -1.0f) && (a1.y <= 1.0f) && (a1.y >= -1.0f))
-        {
-            float x1 = (a1.x + 1.0f) / 2.0f;
-            x1 *= m_width;
-            float y1 = (a1.y + 1.0f) / 2.0f;
-            y1 *= m_height;
-            
-            float x2 = (a2.x + 1.0f) / 2.0f;
-            x2 *= m_width;
-            float y2 = (a2.y + 1.0f) / 2.0f;
-            y2 *= m_height;
-            
-            std::cout << x1 << ", " << y1 << std::endl;
-            std::cout << x2 << ", " << y2 << std::endl;
-            
-            list->PathLineTo(ImVec2(x1, y1));
-            list->PathLineTo(ImVec2(x2, y2));
-            list->PathStroke(IM_COL32(0, 255, 0, 255), false);
-        }
+		drawAABB();
    
         ImGui::End();
         ImGui::PopStyleVar();

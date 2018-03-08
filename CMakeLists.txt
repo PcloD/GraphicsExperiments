@@ -28,3 +28,4 @@ add_subdirectory(external/dwSampleFramework)
 
 # Experiments
 add_subdirectory(src/1_pbr_demo)
+add_subdirectory(src/2_cdlod)
