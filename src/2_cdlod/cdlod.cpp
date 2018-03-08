@@ -29,31 +29,6 @@ if (vertices[v0].visible || vertices[v1].visible)				  \
 	list->PathStroke(color, false);								  \
 }
 
-
-struct Line
-{
-    glm::vec3 a;
-    glm::vec3 b;
-    
-    Line(glm::vec3 _a, glm::vec3 _b) : a(_a), b(_b)
-    {
-        
-    }
-};
-
-const glm::vec3 kCube[] = {
-   glm::vec3(-1.0f, 1.0f, -1.0f), 
-   glm::vec3(1.0f, 1.0f, -1.0f),
-   glm::vec3(-1.0f, -1.0f, -1.0f),
-   glm::vec3(1.0f, -1.0f, -1.0f),
-   glm::vec3(-1.0f, 1.0f, 1.0f), 
-   glm::vec3(1.0f, 1.0f, 1.0f),
-   glm::vec3(-1.0f, -1.0f, 1.0f), 
-   glm::vec3(1.0f, -1.0f, 1.0f)
-};
-
-// 0-1, 1-3, 3-2, 2-0, 0-4, 4-6, 6-2, 1-5, 5-7, 7-3, 4-5, 6-7 
-
 struct SSVertex
 {
 	bool visible;
@@ -81,27 +56,39 @@ public:
         return true;
     }
 
-	void drawAABB()
+	void drawAABB(const glm::vec3& min, const glm::vec3& max)
 	{
 		SSVertex verts[8];
 
-		for (int i = 0; i < 8; i++)
+		glm::vec3 size = max - min;
+		int i = 0;
+
+		for (float y = min.y; y <= max.y; y += size.y)
 		{
-			const glm::vec3& v0 = kCube[i];
-			glm::vec4 v = m_camera->m_view_projection * glm::vec4(v0.x, v0.y, v0.z, 1.0f);
-			v /= v.w;
+			for (float x = min.x; x <= max.x; x += size.x)
+			{
+				for (float z = min.z; z <= max.z; z += size.y)
+				{
+					glm::vec3 v0 = glm::vec3(x, y, z);
 
-			if ((v.x <= 1.0f) && (v.x >= -1.0f) && (v.y <= 1.0f) && (v.y >= -1.0f) && (v.z <= 1.0f) && (v.z >= -1.0f))
-				verts[i].visible = true;
-			else
-				verts[i].visible = false;
+					glm::vec4 v = m_camera->m_view_projection * glm::vec4(v0.x, v0.y, v0.z, 1.0f);
+					v /= v.w;
 
-			float x = (v.x + 1.0f) / 2.0f;
-			x *= m_width;
-			float y = 1.0f - ((v.y + 1.0f) / 2.0f);
-			y *= m_height;
+					if ((v.x <= 1.0f) && (v.x >= -1.0f) && (v.y <= 1.0f) && (v.y >= -1.0f) && (v.z <= 1.0f) && (v.z >= -1.0f))
+						verts[i].visible = true;
+					else
+						verts[i].visible = false;
 
-			verts[i].v = glm::vec2(x, y);
+					float x = (v.x + 1.0f) / 2.0f;
+					x *= m_width;
+					float y = 1.0f - ((v.y + 1.0f) / 2.0f);
+					y *= m_height;
+
+					verts[i].v = glm::vec2(x, y);
+
+					i++;
+				}
+			}
 		}
 
 		ImDrawList* list = ImGui::GetWindowDrawList();
@@ -136,7 +123,7 @@ public:
         ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
         ImGui::Begin("testing", nullptr, ImVec2(io.DisplaySize.x, io.DisplaySize.y), 0.0f, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoInputs);
         
-		drawAABB();
+		drawAABB(glm::vec3(-1.0f, -1.0f, -1.0f), glm::vec3(1.0f, 1.0f, 1.0f));
    
         ImGui::End();
         ImGui::PopStyleVar();
