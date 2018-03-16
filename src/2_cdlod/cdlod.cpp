@@ -18,7 +18,7 @@
 
 #include <macros.h>
 
-#define CAMERA_SPEED 0.05f
+#define CAMERA_SPEED 0.1f
 #define CAMERA_SENSITIVITY 0.02f
 #define CAMERA_ROLL 0.0
 
@@ -185,7 +185,7 @@ public:
                               glm::vec3(0.0f, 0.0f, 10.0f),
                               glm::vec3(0.0f, 0.0f, -1.0f));
         
-		m_root = new Node(vec3f(-128.0f, -10.0f, -128.0f), vec3f(128.0f, 10.0f, 128.0f), 0, 4);
+		m_root = new Node(vec3f(-512.0f, -10.0f, -512.0f), vec3f(512.0f, 10.0f, 512.0f), 0, 4);
 
         return true;
     }
