@@ -367,7 +367,7 @@ protected:
         rs_desc.cull_mode = CullMode::NONE;
         rs_desc.fill_mode = FillMode::SOLID;
         rs_desc.front_winding_ccw = true;
-        rs_desc.multisample = false;
+        rs_desc.multisample = true;
         rs_desc.scissor = false;
         
         m_rs = m_device.create_rasterizer_state(rs_desc);
@@ -912,7 +912,8 @@ protected:
 		//m_device.bind_texture(m_envMap, ShaderType::FRAGMENT, 0);
 		//m_device.bind_texture(m_irradianceMap, ShaderType::FRAGMENT, 0);
 		m_device.bind_texture(m_prefilteredMap, ShaderType::FRAGMENT, 0);
-		m_device.bind_framebuffer(m_offscreenFBO);
+		//m_device.bind_framebuffer(m_offscreenFBO);
+		m_device.bind_framebuffer(nullptr);
 		m_device.set_viewport(m_width, m_height, 0, 0);
 		renderCube();
 	}
@@ -1179,8 +1180,8 @@ protected:
 			m_per_scene.pointLights[i].position += glm::vec4(sin(glfwGetTime() * 5.0) * 0.5, 0.0, 0.0, 0.0);
 		}
 
-		m_device.bind_framebuffer(m_offscreenFBO);
-		//        m_device.bind_framebuffer(nullptr);
+		//m_device.bind_framebuffer(m_offscreenFBO);
+		m_device.bind_framebuffer(nullptr);
 		m_device.set_viewport(m_width, m_height, 0, 0);
 		m_device.clear_framebuffer(ClearTarget::ALL, (float*)clear_color);
 
@@ -1273,21 +1274,21 @@ protected:
 			m_device.draw_indexed_base_vertex(submeshes[i].indexCount, submeshes[i].baseIndex, submeshes[i].baseVertex);
 		}*/
         
-        m_device.bind_framebuffer(nullptr);
-        m_device.set_viewport(m_width, m_height, 0, 0);
+  //      m_device.bind_framebuffer(nullptr);
+  //      m_device.set_viewport(m_width, m_height, 0, 0);
 
-        float clear[] = { 0.0f, 1.0f, 0.0f, 1.0f };
-        m_device.clear_framebuffer(ClearTarget::ALL, clear);
+  //      float clear[] = { 0.0f, 1.0f, 0.0f, 1.0f };
+  //      m_device.clear_framebuffer(ClearTarget::ALL, clear);
 
-        m_device.bind_shader_program(m_quadProgram);
+  //      m_device.bind_shader_program(m_quadProgram);
 	
-        m_device.bind_sampler_state(m_cubemapSampler, ShaderType::FRAGMENT, 0);
-		m_device.bind_texture(m_textureRT, ShaderType::FRAGMENT, 0);
-		//m_device.bind_texture(m_brdfLUT, ShaderType::FRAGMENT, 0);
+  //      m_device.bind_sampler_state(m_cubemapSampler, ShaderType::FRAGMENT, 0);
+		//m_device.bind_texture(m_textureRT, ShaderType::FRAGMENT, 0);
+		////m_device.bind_texture(m_brdfLUT, ShaderType::FRAGMENT, 0);
 
-        m_device.set_primitive_type(PrimitiveType::TRIANGLE_STRIP);
-        m_device.bind_vertex_array(m_quadVAO);
-        m_device.draw(0, 4);
+  //      m_device.set_primitive_type(PrimitiveType::TRIANGLE_STRIP);
+  //      m_device.bind_vertex_array(m_quadVAO);
+  //      m_device.draw(0, 4);
 //        
         //ImGui::ShowTestWindow();
     }
