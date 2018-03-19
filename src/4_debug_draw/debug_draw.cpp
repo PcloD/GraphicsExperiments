@@ -183,15 +183,50 @@ namespace dd
             line(glm::vec3(_pos.x-_radius, _pos.y + _radius, _pos.z), glm::vec3(_pos.x-_radius, _height - _radius, _pos.z), _c);
             line(glm::vec3(_pos.x+_radius, _pos.y + _radius, _pos.z), glm::vec3(_pos.x+_radius, _height - _radius, _pos.z), _c);
             
-            float rad_45 = glm::radians(60.0f);
-            float mid_y = _radius / 2.0f;//_radius * sin(rad_45);
-            float mid_xz = _radius / 3.0f; // equal to mid_y because cos 45 = sin 45
-            
-            // Curve along z-axis
-            line(glm::vec3(_pos.x, _height - _radius, _pos.z-_radius),                glm::vec3(_pos.x, _height - _radius + mid_y, _pos.z-_radius+mid_xz), _c);
-            line(glm::vec3(_pos.x, _height - _radius + mid_y, _pos.z-_radius+mid_xz), glm::vec3(_pos.x, _height, _pos.z), _c);
-            line(glm::vec3(_pos.x, _height - _radius, _pos.z+_radius),                glm::vec3(_pos.x, _height - _radius + mid_y, _pos.z+_radius-mid_xz), _c);
-            line(glm::vec3(_pos.x, _height - _radius + mid_y, _pos.z+_radius-mid_xz), glm::vec3(_pos.x, _height, _pos.z), _c);
+			glm::vec3 verts[10];
+
+			int idx = 0;
+
+			for (int i = 0; i <= 180; i += 20)
+			{
+				float degInRad = glm::radians((float)i);
+				verts[idx++] = glm::vec3(_pos.x + cos(degInRad)*_radius, _height - _radius + sin(degInRad)*_radius, _pos.z);
+			}
+
+			line_strip(&verts[0], 10, _c);
+
+			idx = 0;
+
+			for (int i = 0; i <= 180; i += 20)
+			{
+				float degInRad = glm::radians((float)i);
+				verts[idx++] = glm::vec3(_pos.x, _height - _radius + sin(degInRad)*_radius, _pos.z + cos(degInRad)*_radius);
+			}
+
+			line_strip(&verts[0], 10, _c);
+
+			idx = 0;
+
+			for (int i = 180; i <= 360; i += 20)
+			{
+				float degInRad = glm::radians((float)i);
+				verts[idx++] = glm::vec3(_pos.x + cos(degInRad)*_radius, _radius + sin(degInRad)*_radius, _pos.z);
+			}
+
+			line_strip(&verts[0], 10, _c);
+
+			idx = 0;
+
+			for (int i = 180; i <= 360; i += 20)
+			{
+				float degInRad = glm::radians((float)i);
+				verts[idx++] = glm::vec3(_pos.x, _radius + sin(degInRad)*_radius, _pos.z + cos(degInRad)*_radius);
+			}
+
+			line_strip(&verts[0], 10, _c);
+
+			circle_xz(_radius, glm::vec3(_pos.x, _height - _radius, _pos.z), _c);
+			circle_xz(_radius, glm::vec3(_pos.x, _radius, _pos.z), _c);
         }
         
         void aabb(const glm::vec3& _min, const glm::vec3& _max, const glm::vec3& _pos, const glm::vec3& _c)
@@ -215,22 +250,51 @@ namespace dd
             line(glm::vec3(min.x, min.y, max.z), glm::vec3(min.x, max.y, max.z), _c);
         }
         
-        void obb(const glm::vec3& min, const glm::vec3& max, const glm::mat4& model, const glm::vec3& c)
+        void obb(const glm::vec3& _min, const glm::vec3& _max, const glm::mat4& _model, const glm::vec3& _c)
         {
-            
+			glm::vec3 verts[8];
+			glm::vec3 size = _max - _min;
+			int idx = 0;
+
+			for (float x = _min.x; x <= _max.x; x += size.x)
+			{
+				for (float y = _min.y; y <= _max.y; y += size.y)
+				{
+					for (float z = _min.z; z <= _max.z; z += size.z)
+					{
+						glm::vec4 v = _model * glm::vec4(x, y, z, 1.0f);
+						verts[idx++] = glm::vec3(v.x, v.y, v.z);
+					}
+				}
+			}
+
+			line(verts[0], verts[1], _c);
+			line(verts[1], verts[5], _c);
+			line(verts[5], verts[4], _c);
+			line(verts[4], verts[0], _c);
+
+			line(verts[2], verts[3], _c);
+			line(verts[3], verts[7], _c);
+			line(verts[7], verts[6], _c);
+			line(verts[6], verts[2], _c);
+
+			line(verts[2], verts[0], _c);
+			line(verts[6], verts[4], _c);
+			line(verts[3], verts[1], _c);
+			line(verts[7], verts[5], _c);
         }
         
-        void grid(const float& _x, const float& _z, const float& _y_level, const glm::vec3& _c)
+        void grid(const float& _x, const float& _z, const float& _y_level, const float& spacing, const glm::vec3& _c)
         {
-            int offset_x = floor(_x/2.0f);
-            int offset_z = floor(_z/2.0f);
+            int offset_x = floor((_x * spacing)/2.0f);
+            int offset_z = floor((_z * spacing )/2.0f);
             
-            for (int x = -offset_x; x < (offset_x + 1); x++)
+            for (int x = -offset_x; x <= offset_x; x += spacing)
             {
                 line(glm::vec3(x, _y_level, -offset_z), glm::vec3(x, _y_level, offset_z), _c);
             }
             
-            for (int z = -offset_z; z < (offset_z + 1); z++)
+            for (int z = -offset_z; z <= offset_z; z += spacing)
             {
                 line(glm::vec3(-offset_x, _y_level, z), glm::vec3(offset_x, _y_level, z), _c);
             }
@@ -273,53 +337,57 @@ namespace dd
             m_draw_commands.push_back(cmd);
         }
         
-        void circle_xy(float radius, const glm::vec3& c)
+        void circle_xy(float radius, const glm::vec3& pos, const glm::vec3& c)
         {
             glm::vec3 verts[19];
             
             int idx = 0;
             
-            for (int i=0; i < 360; i+= 20)
+            for (int i=0; i <= 360; i+= 20)
             {
                 float degInRad = glm::radians((float)i);
-                verts[idx++] = glm::vec3(cos(degInRad)*radius,sin(degInRad)*radius, 0.0f);
+                verts[idx++] = pos + glm::vec3(cos(degInRad)*radius,sin(degInRad)*radius, 0.0f);
             }
             
-            verts[18] = verts[0];
             line_strip(&verts[0], 19, c);
         }
         
-        void circle_xz(float radius, const glm::vec3& c)
+        void circle_xz(float radius, const glm::vec3& pos, const glm::vec3& c)
         {
             glm::vec3 verts[19];
             
             int idx = 0;
             
-            for (int i=0; i < 360; i+= 20)
+            for (int i=0; i <= 360; i+= 20)
             {
                 float degInRad = glm::radians((float)i);
-                verts[idx++] = glm::vec3(cos(degInRad)*radius, 0.0f, sin(degInRad)*radius);
+                verts[idx++] = pos + glm::vec3(cos(degInRad)*radius, 0.0f, sin(degInRad)*radius);
             }
             
-            verts[18] = verts[0];
             line_strip(&verts[0], 19, c);
         }
         
-        void circle_yz(float radius, const glm::vec3& c)
+        void circle_yz(float radius, const glm::vec3& pos, const glm::vec3& c)
         {
             glm::vec3 verts[19];
             
             int idx = 0;
             
-            for (int i=0; i < 360; i+= 20)
+            for (int i=0; i <= 360; i+= 20)
             {
                 float degInRad = glm::radians((float)i);
-                verts[idx++] = glm::vec3(0.0f, cos(degInRad)*radius, sin(degInRad)*radius);
+                verts[idx++] = pos + glm::vec3(0.0f, cos(degInRad)*radius, sin(degInRad)*radius);
             }
             
-            verts[18] = verts[0];
             line_strip(&verts[0], 19, c);
         }
+
+		void sphere(const float& radius, const glm::vec3& pos, const glm::vec3& c)
+		{
+			circle_xy(radius, pos, c);
+			circle_xz(radius, pos, c);
+			circle_yz(radius, pos, c);
+		}
         
         void render(Framebuffer* fbo, int width, int height, const glm::mat4& view_proj)
         {
@@ -345,11 +413,6 @@ namespace dd
             m_device->bind_shader_program(m_line_program);
             m_device->bind_uniform_buffer(m_ubo, ShaderType::VERTEX, 0);
             m_device->bind_vertex_array(m_line_vao);
-            
-//            for (int i = 0; i < m_world_vertices.size(); i += 2)
-//            {
-//                m_device->draw(i, 2);
-//            }
             
             int v = 0;
             
@@ -382,6 +445,11 @@ private:
     glm::vec3 m_max_extents;
     glm::vec3 m_pos;
     glm::vec3 m_color;
+	float m_rotation;
+	float m_grid_spacing;
+	float m_grid_y;
+
+	glm::mat4 m_model;
 
 public:
     bool init() override
@@ -397,7 +465,10 @@ public:
         m_max_extents = glm::vec3(10.0f);
         m_pos = glm::vec3(40.0f);
         m_color = glm::vec3(1.0f, 0.0f, 0.0f);
-        
+		m_rotation = 60.0f;
+		m_grid_spacing = 1.0f;
+		m_grid_y = 0.0f;
+
         return m_debug_renderer.init(&m_device);
     }
     
@@ -417,15 +488,18 @@ public:
         ImGui::InputFloat3("Max Extents", &m_max_extents[0]);
         ImGui::InputFloat3("Position", &m_pos[0]);
         ImGui::ColorEdit3("Color", &m_color[0]);
+		ImGui::InputFloat("Rotation", &m_rotation);
+		ImGui::InputFloat("Grid Spacing", &m_grid_spacing);
+		ImGui::InputFloat("Grid Y-Level", &m_grid_y);
         
         ImGui::End();
         
-        m_debug_renderer.circle_xy(20.0f, glm::vec3(1.0f, 0.0f, 0.0f));
-        m_debug_renderer.circle_xz(20.0f, glm::vec3(1.0f, 0.0f, 0.0f));
-        m_debug_renderer.circle_yz(20.0f, glm::vec3(1.0f, 0.0f, 0.0f));
-        m_debug_renderer.capsule(20.0f, 2.0f, glm::vec3(-20.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0));
-        //m_debug_renderer.grid(101.0f, 101.0f, 0.0f, glm::vec3(1.0f));
-        m_debug_renderer.aabb(m_min_extents, m_max_extents, m_pos, m_color);
+        m_debug_renderer.capsule(20.0f, 5.0f, glm::vec3(-20.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0));
+        m_debug_renderer.grid(101.0f, 101.0f, m_grid_y, m_grid_spacing, glm::vec3(1.0f));
+        //m_debug_renderer.aabb(m_min_extents, m_max_extents, m_pos, m_color);
+		m_debug_renderer.sphere(5.0f, glm::vec3(0.0f, 0.0f, 20.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+		m_model = glm::rotate(glm::mat4(1.0f), glm::radians(m_rotation), glm::vec3(0.0f, 1.0f, 0.0f));
+		m_debug_renderer.obb(m_min_extents, m_max_extents, m_model, m_color);
         
         m_debug_renderer.render(nullptr, m_width, m_height, m_camera->m_view_projection);
     }
