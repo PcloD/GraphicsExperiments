@@ -1,4 +1,5 @@
 #include <iostream>
+#include <fstream>
 
 #include <gtc/matrix_transform.hpp>
 #include <gtc/type_ptr.hpp>
@@ -18,10 +19,10 @@
 #define CUBEMAP_WIDTH 512
 #define CUBEMAP_HEIGHT 512
 
-#define PREFILTER_MIPMAPS 5
+#define PREFILTER_MIPMAPS 7
 
-#define PREFILTER_WIDTH 128
-#define PREFILTER_HEIGHT 128
+#define PREFILTER_WIDTH 256
+#define PREFILTER_HEIGHT 256
 
 #define CAMERA_SPEED 0.05f
 #define CAMERA_SENSITIVITY 0.02f
@@ -33,6 +34,7 @@
 
 #define MAX_POINT_LIGHTS 8
 #define VEC3_TO_VEC4(vector) glm::vec4(vector.x, vector.y, vector.z, 1.0f)
+#define READ_AND_OFFSET(stream, dest, size, offset) stream.read((char*)dest, size); offset += size; stream.seekp(offset);
 
 #define NUM_ROWS 7
 #define NUM_COLUMNS 7
@@ -79,6 +81,46 @@ struct DW_ALIGNED(16) CubeMapUniforms
 {
 	glm::mat4 proj;
 	glm::mat4 view;
+};
+
+enum ImageFormat
+{
+	FORMAT_R8 = 0,
+	FORMAT_R16 = 1,
+	FORMAT_R32 = 2,
+	FORMAT_R8G8 = 3,
+	FORMAT_R16G16 = 4,
+	FORMAT_R32G32 = 5,
+	FORMAT_R8G8B8 = 6,
+	FORMAT_R16G16B16 = 7,
+	FORMAT_R32G32B32 = 8,
+	FORMAT_R8G8B8A8 = 9,
+	FORMAT_R16G16B16A16 = 10,
+	FORMAT_R32G32B32A32 = 11,
+	FORMAT_DEFAULT = 12
+};
+
+struct ImageHeader
+{
+	uint8_t  compression;
+	uint8_t  channelSize;
+	uint8_t  numChannels;
+	uint16_t numArraySlices;
+	uint8_t  numMipSlices;
+};
+
+struct MipSliceHeader
+{
+	uint16_t width;
+	uint16_t height;
+	int size;
+};
+
+struct FileHeader
+{
+	uint32_t magic;
+	uint8_t  version;
+	uint8_t  type;
 };
 
 const float clear_color[] = { 0.1f, 0.1f, 0.1f, 1.0f};
@@ -195,9 +237,6 @@ private:
 	Shader* m_irradianceFs;
 	ShaderProgram* m_irradianceProgram;
 
-	Shader* m_prefilterFs;
-	ShaderProgram* m_prefilterProgram;
-
 	Shader* m_brdfIntegrateFs;
 	ShaderProgram* m_brdfIntegrateProgram;
 
@@ -206,18 +245,14 @@ private:
 
 	Texture2D* m_latLongMap;
 	TextureCube* m_envMap;
+	TextureCube* m_prefilteredMap;
 	Framebuffer* m_envMapFBOs[6];
 	UniformBuffer* m_cubeMapUBO;
 
 	TextureCube* m_irradianceMap;
 	Framebuffer* m_irradianceMapFBOs[6];
 
-	TextureCube* m_prefilteredMap;
-	Framebuffer* m_prefilteredMapFBOs[PREFILTER_MIPMAPS][6];
-
 	CubeMapUniforms m_cubemapUniforms[6];
-	PerEntityUniforms m_prefilterUniforms[PREFILTER_MIPMAPS];
-
 	PerEntityUniforms m_sphereUniforms[NUM_ROWS * NUM_COLUMNS];
     
 protected:
@@ -262,26 +297,6 @@ protected:
 		}
 
 		delete[]data;
-	}
-
-	void savePrefilterMap()
-	{
-		for (int mip = 0; mip < PREFILTER_MIPMAPS; mip++)
-		{
-			int width, height = 0;
-			m_device.texture_extents(m_prefilteredMap, mip, width, height);
-
-			float* data = new float[width * height * 3];
-
-			for (int i = 0; i < 6; i++)
-			{
-				m_device.texture_data(m_prefilteredMap, mip, TextureType::TEXTURECUBE_POSITIVE_X + i, data);
-				std::string fileName = "prefilter/prefiltered_map_mip" + std::to_string(mip) + "_" + std::to_string(i) + ".hdr";
-				stbi_write_hdr(fileName.c_str(), width, height, 3, data);
-			}
-
-			delete[]data;
-		}
 	}
 
 	void saveIrradianceMap()
@@ -449,12 +464,6 @@ protected:
 
 		m_device.wait_for_idle();
 
-		//saveIrradianceMap();
-
-		renderPrefilteredMap();
-
-		m_device.wait_for_idle();
-
 		//savePrefilterMap();
 
 		preintegrateBRDF();
@@ -614,23 +623,6 @@ protected:
 
 		fs_str.clear();
 		Utility::ReadText("shader/prefilter_fs.glsl", fs_str);
-
-		m_prefilterFs = m_device.create_shader(fs_str.c_str(), ShaderType::FRAGMENT);
-
-		if (!m_prefilterFs)
-		{
-			LOG_FATAL("Failed to create Shaders");
-			return false;
-		}
-
-		Shader* prefilterShaders[] = { m_latlongToCubeVs, m_prefilterFs };
-		m_prefilterProgram = m_device.create_shader_program(prefilterShaders, 2);
-
-		if (!m_prefilterProgram)
-		{
-			LOG_FATAL("Failed to create Shader Program");
-			return false;
-		}
 
 		fs_str.clear();
 		Utility::ReadText("shader/precompute_fs.glsl", fs_str);
@@ -873,7 +865,7 @@ protected:
 
 		desc.width = width;
 		desc.height = height;
-		desc.format = TextureFormat::R16G16B16_FLOAT;
+		desc.format = TextureFormat::R32G32B32_FLOAT;
 		desc.mipmap_levels = 10;
 		desc.data = data;
 
@@ -928,40 +920,6 @@ protected:
 		renderToCubeMap(&m_irradianceMapFBOs[0], CUBEMAP_WIDTH, CUBEMAP_HEIGHT);
 	}
 
-	void renderPrefilteredMap()
-	{
-		char* mem = (char*)m_device.map_buffer(m_per_entity_ubo, BufferMapType::WRITE);
-
-		if (mem)
-		{
-			// Write out roughness values
-			for (int i = 0; i < PREFILTER_MIPMAPS; i++)
-			{
-				float roughness = (float)i / (float)(PREFILTER_MIPMAPS - 1);
-				m_prefilterUniforms[i].u_metalRough.y = roughness;
-
-				size_t offset = m_uboAlign * i;
-				memcpy(mem + offset, &m_prefilterUniforms[i], sizeof(PerEntityUniforms));
-			}
-
-			m_device.unmap_buffer(m_per_entity_ubo);
-		}
-
-		m_device.bind_rasterizer_state(m_rs);
-		m_device.bind_depth_stencil_state(m_ds);
-		m_device.bind_shader_program(m_prefilterProgram);
-		m_device.bind_sampler_state(m_cubemapSampler, ShaderType::FRAGMENT, 0);
-		m_device.bind_texture(m_envMap, ShaderType::FRAGMENT, 0);
-
-		for (int i = 0; i < PREFILTER_MIPMAPS; i++)
-		{
-			unsigned int mipWidth = PREFILTER_WIDTH * std::pow(0.5, i);
-			unsigned int mipHeight = PREFILTER_HEIGHT * std::pow(0.5, i);
-			m_device.bind_uniform_buffer_range(m_per_entity_ubo, ShaderType::FRAGMENT, 1, m_uboAlign * i, sizeof(PerEntityUniforms));
-			renderToCubeMap(&m_prefilteredMapFBOs[i][0], mipWidth, mipHeight);
-		}		
-	}
-
 	void preintegrateBRDF()
 	{
 		m_device.bind_framebuffer(m_brdfLUTFBO);
@@ -987,6 +945,69 @@ protected:
 		renderToCubeMap(&m_envMapFBOs[0], CUBEMAP_WIDTH, CUBEMAP_HEIGHT);
 
 		m_device.generate_mipmaps(m_envMap);
+	}
+
+	void loadTRMImage(Texture* texture, const char* file)
+	{
+		std::fstream f(file, std::ios::in | std::ios::binary);
+
+		FileHeader fileheader;
+		uint16_t nameLength = 0;
+		char name[256];
+		ImageHeader imageHeader;
+
+		long offset = 0;
+
+		f.seekp(offset);
+
+		READ_AND_OFFSET(f, &fileheader, sizeof(FileHeader), offset);
+		READ_AND_OFFSET(f, &nameLength, sizeof(uint16_t), offset);
+		READ_AND_OFFSET(f, &name[0], sizeof(char) * nameLength, offset);
+
+		name[nameLength] = '\0';
+		std::cout << "Name: " << name << std::endl;
+
+		READ_AND_OFFSET(f, &imageHeader, sizeof(ImageHeader), offset);
+
+		std::cout << "Channel Size: " << imageHeader.channelSize << std::endl;
+		std::cout << "Channel Count: " << imageHeader.numChannels << std::endl;
+		std::cout << "Array Slice Count: " << imageHeader.numArraySlices << std::endl;
+		std::cout << "Mip Slice Count: " << imageHeader.numMipSlices << std::endl;
+
+		for (int arraySlice = 0; arraySlice < imageHeader.numArraySlices; arraySlice++)
+		{
+			std::cout << std::endl;
+			std::cout << "Array Slice: " << arraySlice << std::endl;
+
+			for (int mipSlice = 0; mipSlice < imageHeader.numMipSlices; mipSlice++)
+			{
+				MipSliceHeader mipHeader;
+				char* imageData;
+
+				READ_AND_OFFSET(f, &mipHeader, sizeof(MipSliceHeader), offset);
+
+				std::cout << std::endl;
+				std::cout << "Mip Slice: " << mipSlice << std::endl;
+				std::cout << "Width: " << mipHeader.width << std::endl;
+				std::cout << "Height: " << mipHeader.height << std::endl;
+
+				imageData = (char*)malloc(mipHeader.size);
+
+				READ_AND_OFFSET(f, imageData, mipHeader.size, offset);
+
+				m_device.set_texture_data(texture,
+										  mipSlice,
+										  TextureType::TEXTURECUBE + arraySlice + 1, 
+										  mipHeader.width, 
+										  mipHeader.height, 
+										  imageData);
+
+				free(imageData);
+			}
+		}
+
+		f.close();
+
 	}
 
 	bool createFramebuffers()
@@ -1016,7 +1037,7 @@ protected:
 			return false;
 		}
 
-		rtDesc.format = TextureFormat::R32G32_FLOAT;
+		rtDesc.format = TextureFormat::R16G16_FLOAT;
 		rtDesc.height = 512;
 		rtDesc.width = 512;
 
@@ -1066,7 +1087,7 @@ protected:
 		desc.width = CUBEMAP_WIDTH;
 		desc.height = CUBEMAP_HEIGHT;
 		desc.mipmapLevels = PREFILTER_MIPMAPS;
-		desc.format = TextureFormat::R32G32B32_FLOAT;
+		desc.format = TextureFormat::R16G16B16_FLOAT;
 
 		m_envMap = m_device.create_texture_cube(desc);
 		m_irradianceMap = m_device.create_texture_cube(desc);
@@ -1077,6 +1098,8 @@ protected:
 		desc.mipmapLevels = PREFILTER_MIPMAPS;
 
 		m_prefilteredMap = m_device.create_texture_cube(desc);
+
+		loadTRMImage(m_prefilteredMap, "texture/radiance.trm");
 
 		DW_ZERO_MEMORY(fbDesc);
 		fbDesc.renderTargetCount = 1;
@@ -1096,20 +1119,6 @@ protected:
 		{
 			fbDesc.renderTargets[0].arraySlice = TextureType::TEXTURECUBE + (i + 1);
 			m_irradianceMapFBOs[i] = m_device.create_framebuffer(fbDesc);
-		}
-
-		// Prefilter Map
-		fbDesc.renderTargets[0].texture = m_prefilteredMap;
-
-		for (int i = 0; i < PREFILTER_MIPMAPS; i++)
-		{
-			fbDesc.renderTargets[0].mipSlice = i;
-
-			for (int j = 0; j < 6; j++)
-			{
-				fbDesc.renderTargets[0].arraySlice = TextureType::TEXTURECUBE + (j + 1);
-				m_prefilteredMapFBOs[i][j] = m_device.create_framebuffer(fbDesc);
-			}
 		}
 
 		return true;
@@ -1356,11 +1365,6 @@ protected:
 		{
 			m_device.destroy(m_envMapFBOs[i]);
 			m_device.destroy(m_irradianceMapFBOs[i]);
-
-			for (int j = 0; j < PREFILTER_MIPMAPS; j++)
-			{
-				m_device.destroy(m_prefilteredMapFBOs[j][i]);
-			}
 		}
 
 		m_device.destroy(m_brdfLUTFBO);
@@ -1377,8 +1381,6 @@ protected:
         m_device.destroy(m_per_entity_ubo);
         m_device.destroy(m_per_frame_ubo);
 		m_device.destroy(m_cubeMapUBO);
-		m_device.destroy(m_prefilterProgram);
-		m_device.destroy(m_prefilterFs);
 		m_device.destroy(m_brdfIntegrateProgram);
 		m_device.destroy(m_brdfIntegrateFs);
 		m_device.destroy(m_irradianceProgram);
