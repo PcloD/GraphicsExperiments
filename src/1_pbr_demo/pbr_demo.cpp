@@ -211,8 +211,8 @@ private:
     Shader* m_quadFs;
     ShaderProgram* m_quadProgram;
 	//dw::Scene m_Scene;
-	//dw::Mesh* m_Mesh;
-	//dw::Material* m_Mat;
+	dw::Mesh* m_Mesh;
+	dw::Material* m_Mat;
 
 	uint32_t m_sphereIndexCount;
 	IndexBuffer* m_sphereIBO;
@@ -226,16 +226,9 @@ private:
 	VertexArray* m_cubeVAO;
 	InputLayout* m_cubeIL;
 
-	Shader* m_latlongToCubeVs;
-	Shader* m_latlongToCubeFs;
-	ShaderProgram* m_latlongToCubeProgram;
-
 	Shader* m_cubeMapVs;
 	Shader* m_cubeMapFs;
 	ShaderProgram* m_cubeMapProgram;
-
-	Shader* m_irradianceFs;
-	ShaderProgram* m_irradianceProgram;
 
 	Shader* m_brdfIntegrateFs;
 	ShaderProgram* m_brdfIntegrateProgram;
@@ -243,14 +236,10 @@ private:
 	Texture2D* m_brdfLUT;
 	Framebuffer* m_brdfLUTFBO;
 
-	Texture2D* m_latLongMap;
 	TextureCube* m_envMap;
 	TextureCube* m_prefilteredMap;
-	Framebuffer* m_envMapFBOs[6];
-	UniformBuffer* m_cubeMapUBO;
-
 	TextureCube* m_irradianceMap;
-	Framebuffer* m_irradianceMapFBOs[6];
+	UniformBuffer* m_cubeMapUBO;
 
 	CubeMapUniforms m_cubemapUniforms[6];
 	PerEntityUniforms m_sphereUniforms[NUM_ROWS * NUM_COLUMNS];
@@ -318,8 +307,8 @@ protected:
 
     bool init() override
     {
-		//m_Mat = dw::Material::Load("material/mat_rusted_iron.json", &m_device);
-		//m_Mesh = dw::Mesh::Load("mesh/shaderBall.tsm", &m_device, m_Mat);
+		//m_Mat = dw::Material::load("material/mat_rusted_iron.json", &m_device);
+		m_Mesh = dw::Mesh::load("mesh/cerberus.tsm", &m_device);
 		
         m_camera = new Camera(45.0f,
                             0.1f,
@@ -429,7 +418,10 @@ protected:
         m_sampler = m_device.create_sampler_state(ssDesc);
 
 		ssDesc.min_filter = TextureFilteringMode::LINEAR_ALL;
-		ssDesc.mag_filter = TextureFilteringMode::LINEAR_ALL;
+		ssDesc.mag_filter = TextureFilteringMode::LINEAR;
+		ssDesc.wrap_mode_u = TextureWrapMode::REPEAT;
+		ssDesc.wrap_mode_v = TextureWrapMode::REPEAT;
+		ssDesc.wrap_mode_w = TextureWrapMode::REPEAT;
 
 		m_cubemapSampler = m_device.create_sampler_state(ssDesc);
 
@@ -450,22 +442,6 @@ protected:
 			m_cubemapUniforms[i].view = captureViews[i];
 		}
 
-		loadHDRImage();
-
-		m_device.wait_for_idle();
-
-		latlongToCubeMap();
-        
-		m_device.wait_for_idle();
-
-		//saveEnvMap();
-
-		renderIrradianceMap();
-
-		m_device.wait_for_idle();
-
-		//savePrefilterMap();
-
 		preintegrateBRDF();
 
 		m_device.wait_for_idle();
@@ -477,29 +453,15 @@ protected:
 
 	void createSphereTransforms()
 	{
-		const float spacing = 2.5f;
-
-		float halfX = (spacing * (NUM_COLUMNS - 1)) / 2.0f;
-		float halfY = (spacing  * (NUM_ROWS - 1)) / 2.0f;
-
-		glm::vec4 startPos = glm::vec4(-halfX, -halfY, 0.0f, 0.0f);
+		glm::vec4 startPos = glm::vec4(0.0f);
 
 		for (uint32_t i = 0; i < NUM_ROWS; i++)
 		{
 			for (uint32_t j = 0; j < NUM_COLUMNS; j++)
 			{
-				float metalness = i / float(NUM_ROWS - 1);
-				float roughness = j / float(NUM_COLUMNS - 1);
-
 				m_sphereUniforms[(i * NUM_COLUMNS) + j].u_pos = startPos;
-				m_sphereUniforms[(i * NUM_COLUMNS) + j].u_model_mat = glm::translate(glm::mat4(1.0f), glm::vec3(startPos.x, startPos.y, startPos.z));
-				m_sphereUniforms[(i * NUM_COLUMNS) + j].u_metalRough.x = metalness;
-				m_sphereUniforms[(i * NUM_COLUMNS) + j].u_metalRough.y = glm::clamp(roughness, 0.05f, 1.0f);
-				startPos += glm::vec4(spacing, 0.0f, 0.0f, 0.0f);
+				m_sphereUniforms[(i * NUM_COLUMNS) + j].u_model_mat = glm::rotate(glm::mat4(1.0f), glm::radians(-90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
 			}
-
-			startPos += glm::vec4(0.0f, spacing, 0.0f, 0.0f);
-			startPos.x = -halfX;
 		}
 	}
     
@@ -552,30 +514,6 @@ protected:
             LOG_FATAL("Failed to create Shader Program");
             return false;
         }
-
-		vs_str.clear();
-		Utility::ReadText("shader/latlong_vs.glsl", vs_str);
-
-		fs_str.clear();
-		Utility::ReadText("shader/latlong_fs.glsl", fs_str);
-
-		m_latlongToCubeVs = m_device.create_shader(vs_str.c_str(), ShaderType::VERTEX);
-		m_latlongToCubeFs = m_device.create_shader(fs_str.c_str(), ShaderType::FRAGMENT);
-
-		if (!m_latlongToCubeVs || !m_latlongToCubeFs)
-		{
-			LOG_FATAL("Failed to create Shaders");
-			return false;
-		}
-
-		Shader* latlongShaders[] = { m_latlongToCubeVs, m_latlongToCubeFs };
-		m_latlongToCubeProgram = m_device.create_shader_program(latlongShaders, 2);
-
-		if (!m_latlongToCubeProgram)
-		{
-			LOG_FATAL("Failed to create Shader Program");
-			return false;
-		}
         
 		vs_str.clear();
 		Utility::ReadText("shader/cubemap_vs.glsl", vs_str);
@@ -596,26 +534,6 @@ protected:
 		m_cubeMapProgram = m_device.create_shader_program(cubemapShaders, 2);
 
 		if (!m_cubeMapProgram)
-		{
-			LOG_FATAL("Failed to create Shader Program");
-			return false;
-		}
-
-		fs_str.clear();
-		Utility::ReadText("shader/irradiance_fs.glsl", fs_str);
-
-		m_irradianceFs = m_device.create_shader(fs_str.c_str(), ShaderType::FRAGMENT);
-
-		if (!m_irradianceFs)
-		{
-			LOG_FATAL("Failed to create Shaders");
-			return false;
-		}
-
-		Shader* irradianceShaders[] = { m_latlongToCubeVs, m_irradianceFs };
-		m_irradianceProgram = m_device.create_shader_program(irradianceShaders, 2);
-
-		if (!m_irradianceProgram)
 		{
 			LOG_FATAL("Failed to create Shader Program");
 			return false;
@@ -854,26 +772,6 @@ protected:
 		return true;
 	}
 
-	void loadHDRImage()
-	{
-		stbi_set_flip_vertically_on_load(true);
-		int width, height, nrComponents;
-		float *data = stbi_loadf("texture/newport_loft.hdr", &width, &height, &nrComponents, 0);
-
-		Texture2DCreateDesc desc;
-		DW_ZERO_MEMORY(desc);
-
-		desc.width = width;
-		desc.height = height;
-		desc.format = TextureFormat::R32G32B32_FLOAT;
-		desc.mipmap_levels = 10;
-		desc.data = data;
-
-		m_latLongMap = m_device.create_texture_2d(desc);
-
-		stbi_image_free(data);
-	}
-
 	void renderToCubeMap(Framebuffer** fbos, uint32_t width, uint32_t height)
 	{
 		char* mem = (char*)m_device.map_buffer(m_cubeMapUBO, BufferMapType::WRITE);
@@ -901,23 +799,13 @@ protected:
 		m_device.bind_shader_program(m_cubeMapProgram);
 		m_device.bind_uniform_buffer(m_per_frame_ubo, ShaderType::VERTEX, 0);
 		m_device.bind_sampler_state(m_cubemapSampler, ShaderType::FRAGMENT, 0);
-		//m_device.bind_texture(m_envMap, ShaderType::FRAGMENT, 0);
+		m_device.bind_texture(m_envMap, ShaderType::FRAGMENT, 0);
 		//m_device.bind_texture(m_irradianceMap, ShaderType::FRAGMENT, 0);
-		m_device.bind_texture(m_prefilteredMap, ShaderType::FRAGMENT, 0);
+		//m_device.bind_texture(m_prefilteredMap, ShaderType::FRAGMENT, 0);
 		//m_device.bind_framebuffer(m_offscreenFBO);
 		m_device.bind_framebuffer(nullptr);
 		m_device.set_viewport(m_width, m_height, 0, 0);
 		renderCube();
-	}
-
-	void renderIrradianceMap()
-	{
-		m_device.bind_rasterizer_state(m_rs);
-		m_device.bind_depth_stencil_state(m_ds);
-		m_device.bind_shader_program(m_irradianceProgram);
-		m_device.bind_sampler_state(m_sampler, ShaderType::FRAGMENT, 0);
-		m_device.bind_texture(m_envMap, ShaderType::FRAGMENT, 0);
-		renderToCubeMap(&m_irradianceMapFBOs[0], CUBEMAP_WIDTH, CUBEMAP_HEIGHT);
 	}
 
 	void preintegrateBRDF()
@@ -935,20 +823,13 @@ protected:
 		m_device.draw(0, 4);
 	}
 
-	void latlongToCubeMap()
+	TextureCube* loadTRMImage(const char* file)
 	{
-		m_device.bind_rasterizer_state(m_rs);
-		m_device.bind_depth_stencil_state(m_ds);
-		m_device.bind_shader_program(m_latlongToCubeProgram);
-		m_device.bind_sampler_state(m_sampler, ShaderType::FRAGMENT, 0);
-		m_device.bind_texture(m_latLongMap, ShaderType::FRAGMENT, 0);
-		renderToCubeMap(&m_envMapFBOs[0], CUBEMAP_WIDTH, CUBEMAP_HEIGHT);
+		TextureCubeCreateDesc desc;
+		DW_ZERO_MEMORY(desc);
 
-		m_device.generate_mipmaps(m_envMap);
-	}
+		TextureCube* cube;
 
-	void loadTRMImage(Texture* texture, const char* file)
-	{
 		std::fstream f(file, std::ios::in | std::ios::binary);
 
 		FileHeader fileheader;
@@ -974,6 +855,9 @@ protected:
 		std::cout << "Array Slice Count: " << imageHeader.numArraySlices << std::endl;
 		std::cout << "Mip Slice Count: " << imageHeader.numMipSlices << std::endl;
 
+		desc.mipmapLevels = imageHeader.numMipSlices;
+		desc.format = TextureFormat::R16G16B16_FLOAT;
+
 		for (int arraySlice = 0; arraySlice < imageHeader.numArraySlices; arraySlice++)
 		{
 			std::cout << std::endl;
@@ -986,6 +870,13 @@ protected:
 
 				READ_AND_OFFSET(f, &mipHeader, sizeof(MipSliceHeader), offset);
 
+				if (arraySlice == 0 && mipSlice == 0)
+				{
+					desc.width = mipHeader.width;
+					desc.height = mipHeader.height;
+					cube = m_device.create_texture_cube(desc);
+				}
+
 				std::cout << std::endl;
 				std::cout << "Mip Slice: " << mipSlice << std::endl;
 				std::cout << "Width: " << mipHeader.width << std::endl;
@@ -995,7 +886,7 @@ protected:
 
 				READ_AND_OFFSET(f, imageData, mipHeader.size, offset);
 
-				m_device.set_texture_data(texture,
+				m_device.set_texture_data(cube,
 										  mipSlice,
 										  TextureType::TEXTURECUBE + arraySlice + 1, 
 										  mipHeader.width, 
@@ -1008,6 +899,7 @@ protected:
 
 		f.close();
 
+		return cube;
 	}
 
 	bool createFramebuffers()
@@ -1081,45 +973,9 @@ protected:
 			return false;
 		}
 
-		TextureCubeCreateDesc desc;
-		DW_ZERO_MEMORY(desc);
-
-		desc.width = CUBEMAP_WIDTH;
-		desc.height = CUBEMAP_HEIGHT;
-		desc.mipmapLevels = PREFILTER_MIPMAPS;
-		desc.format = TextureFormat::R16G16B16_FLOAT;
-
-		m_envMap = m_device.create_texture_cube(desc);
-		m_irradianceMap = m_device.create_texture_cube(desc);
-
-		// Prefilter Map
-		desc.width = PREFILTER_WIDTH;
-		desc.height = PREFILTER_HEIGHT;
-		desc.mipmapLevels = PREFILTER_MIPMAPS;
-
-		m_prefilteredMap = m_device.create_texture_cube(desc);
-
-		loadTRMImage(m_prefilteredMap, "texture/radiance.trm");
-
-		DW_ZERO_MEMORY(fbDesc);
-		fbDesc.renderTargetCount = 1;
-
-		fbDesc.renderTargets[0].texture = m_envMap;		
-		fbDesc.renderTargets[0].mipSlice = 0;
-
-		for (int i = 0; i < 6; i++)
-		{
-			fbDesc.renderTargets[0].arraySlice = TextureType::TEXTURECUBE + (i + 1);
-			m_envMapFBOs[i] = m_device.create_framebuffer(fbDesc);
-		}
-
-		fbDesc.renderTargets[0].texture = m_irradianceMap;
-
-		for (int i = 0; i < 6; i++)
-		{
-			fbDesc.renderTargets[0].arraySlice = TextureType::TEXTURECUBE + (i + 1);
-			m_irradianceMapFBOs[i] = m_device.create_framebuffer(fbDesc);
-		}
+		m_envMap = loadTRMImage("texture/Arches_E_PineTree_3k.trm");
+		m_irradianceMap = loadTRMImage("texture/irradiance.trm");
+		m_prefilteredMap = loadTRMImage("texture/radiance.trm");
 
 		return true;
 	}
@@ -1233,55 +1089,95 @@ protected:
 		//renderPrefilteredMap();
 
 		updateUniforms();
+
+		char* mem = (char*)m_device.map_buffer(m_per_entity_ubo, BufferMapType::WRITE);
+
+		if (mem)
+		{
+			for (uint32_t i = 0; i < NUM_ROWS; i++)
+			{
+				for (uint32_t j = 0; j < NUM_COLUMNS; j++)
+				{
+					uint32_t index = (i * NUM_COLUMNS) + j;
+					size_t offset = m_uboAlign * index;
+					memcpy(mem + offset, &m_sphereUniforms[index], sizeof(PerEntityUniforms));
+				}
+			}
+
+			m_device.unmap_buffer(m_per_entity_ubo);
+		}
          
         m_device.bind_rasterizer_state(m_rs);
         m_device.bind_depth_stencil_state(m_ds);
+
+		m_device.bind_uniform_buffer(m_per_frame_ubo, ShaderType::VERTEX, 0);
+		m_device.bind_uniform_buffer(m_per_scene_ubo, ShaderType::FRAGMENT, 2);
         
-		renderSpheres();
+		//renderSpheres();
 
-		renderCubeMap();
-		//dw::SubMesh* submeshes = m_Mesh->SubMeshes();
-		//dw::Material* mat = m_Mesh->OverrideMaterial();
+		dw::SubMesh* submeshes = m_Mesh->sub_meshes();
 
-		//if (mat)
-		//{
-		//	Texture2D* albedo = mat->TextureAlbedo();
+		dw::Material* mat = submeshes[0].mat;
 
-		//	if (albedo)
-		//	{			
-		//		m_device.bind_sampler_state(m_sampler, ShaderType::FRAGMENT, 0);
-		//		m_device.bind_texture(albedo, ShaderType::FRAGMENT, 0);
-		//	}
+		if (!mat)
+			mat = m_Mesh->override_material();
 
-		//	Texture2D* normal = mat->TextureNormal();
+		m_device.bind_vertex_array(m_Mesh->mesh_vertex_array());
+		m_device.bind_shader_program(m_program);
 
-		//	if (normal)
-		//	{
-		//		m_device.bind_sampler_state(m_sampler, ShaderType::FRAGMENT, 1);
-		//		m_device.bind_texture(normal, ShaderType::FRAGMENT, 1);
-		//	}
-		//		
-		//	Texture2D* metalness = mat->TextureMetalness();
+		if (mat)
+		{
+			Texture2D* albedo = mat->texture_albedo();
 
-		//	if (metalness)
-		//	{	
-		//		m_device.bind_sampler_state(m_sampler, ShaderType::FRAGMENT, 2);
-		//		m_device.bind_texture(metalness, ShaderType::FRAGMENT, 2);
-		//	}
-		//		
-		//	Texture2D* roughness = mat->TextureRoughness();
+			if (albedo)
+			{			
+				m_device.bind_sampler_state(m_cubemapSampler, ShaderType::FRAGMENT, 0);
+				m_device.bind_texture(albedo, ShaderType::FRAGMENT, 0);
+			}
 
-		//	if (roughness)
-		//	{
-		//		m_device.bind_sampler_state(m_sampler, ShaderType::FRAGMENT, 3);
-		//		m_device.bind_texture(roughness, ShaderType::FRAGMENT, 3);
-		//	}
-		//}
+			Texture2D* normal = mat->texture_normal();
 
-		/*for (uint32_t i = 0; i < m_Mesh->SubMeshCount(); i++)
+			if (normal)
+			{
+				m_device.bind_sampler_state(m_cubemapSampler, ShaderType::FRAGMENT, 1);
+				m_device.bind_texture(normal, ShaderType::FRAGMENT, 1);
+			}
+				
+			Texture2D* metalness = mat->texture_metalness();
+
+			if (metalness)
+			{	
+				m_device.bind_sampler_state(m_cubemapSampler, ShaderType::FRAGMENT, 2);
+				m_device.bind_texture(metalness, ShaderType::FRAGMENT, 2);
+			}
+				
+			Texture2D* roughness = mat->texture_roughness();
+
+			if (roughness)
+			{
+				m_device.bind_sampler_state(m_cubemapSampler, ShaderType::FRAGMENT, 3);
+				m_device.bind_texture(roughness, ShaderType::FRAGMENT, 3);
+			}
+		}
+
+		m_device.bind_sampler_state(m_sampler, ShaderType::FRAGMENT, 4);
+		m_device.bind_texture(m_irradianceMap, ShaderType::FRAGMENT, 4);
+
+		m_device.bind_sampler_state(m_cubemapSampler, ShaderType::FRAGMENT, 5);
+		m_device.bind_texture(m_prefilteredMap, ShaderType::FRAGMENT, 5);
+
+		m_device.bind_sampler_state(m_sampler, ShaderType::FRAGMENT, 6);
+		m_device.bind_texture(m_brdfLUT, ShaderType::FRAGMENT, 6);
+
+		m_device.bind_uniform_buffer_range(m_per_entity_ubo, ShaderType::VERTEX, 1, 0, sizeof(PerEntityUniforms));
+		m_device.set_primitive_type(PrimitiveType::TRIANGLES);
+
+		for (uint32_t i = 0; i < m_Mesh->sub_mesh_count(); i++)
 		{
 			m_device.draw_indexed_base_vertex(submeshes[i].indexCount, submeshes[i].baseIndex, submeshes[i].baseVertex);
-		}*/
+		}
+
+		renderCubeMap();
         
   //      m_device.bind_framebuffer(nullptr);
   //      m_device.set_viewport(m_width, m_height, 0, 0);
@@ -1361,15 +1257,8 @@ protected:
 		//dw::Material::Unload(m_Mat);
 		//dw::Mesh::Unload(m_Mesh);
 
-		for (int i = 0; i < 6; i++)
-		{
-			m_device.destroy(m_envMapFBOs[i]);
-			m_device.destroy(m_irradianceMapFBOs[i]);
-		}
-
 		m_device.destroy(m_brdfLUTFBO);
 		m_device.destroy(m_prefilteredMap);
-		m_device.destroy(m_latLongMap);
 		m_device.destroy(m_envMap);
 		m_device.destroy(m_irradianceMap);
 		m_device.destroy(m_brdfLUT);
@@ -1383,14 +1272,9 @@ protected:
 		m_device.destroy(m_cubeMapUBO);
 		m_device.destroy(m_brdfIntegrateProgram);
 		m_device.destroy(m_brdfIntegrateFs);
-		m_device.destroy(m_irradianceProgram);
-		m_device.destroy(m_irradianceFs);
 		m_device.destroy(m_cubeMapProgram);
 		m_device.destroy(m_cubeMapFs);
 		m_device.destroy(m_cubeMapVs);
-		m_device.destroy(m_latlongToCubeProgram);
-		m_device.destroy(m_latlongToCubeFs);
-		m_device.destroy(m_latlongToCubeVs);
         m_device.destroy(m_quadProgram);
         m_device.destroy(m_quadFs);
         m_device.destroy(m_quadVs);
