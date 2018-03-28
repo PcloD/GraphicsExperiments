@@ -430,7 +430,52 @@ namespace dd
     };
 }
 
+struct DirectoryEntry
+{
+	std::string name;
+	std::string full_path;
+	std::vector<std::string> files;
+	std::vector<DirectoryEntry> directories;
+};
 
+void find_assets(const std::string& name, DirectoryEntry& root_entry)
+{
+	std::string pattern(name);
+	pattern.append("\\*");
+	WIN32_FIND_DATA data;
+	HANDLE hFind;
+	if ((hFind = FindFirstFile(pattern.c_str(), &data)) != INVALID_HANDLE_VALUE) {
+		do {
+			std::string current = data.cFileName;
+			std::string path = name;
+			path += "/";
+			path += data.cFileName;
+			DWORD dwAttr = GetFileAttributes(path.c_str());
+
+			if (dwAttr != 0xffffffff && (dwAttr & FILE_ATTRIBUTE_DIRECTORY))
+			{
+				if (current != "." && current != "..")
+				{
+					DirectoryEntry dir;
+					dir.name = data.cFileName;
+					dir.full_path = path;
+
+					find_assets(path, dir);
+					root_entry.directories.push_back(dir);
+				}
+			}
+			else
+			{
+				if (current != "." && current != "..")
+				{
+					root_entry.files.push_back(data.cFileName);
+				}
+			}
+
+		} while (FindNextFile(hFind, &data) != 0);
+		FindClose(hFind);
+	}
+}
 
 class DebugDrawDemo : public dw::Application
 {
@@ -448,10 +493,24 @@ private:
 	float m_rotation;
 	float m_grid_spacing;
 	float m_grid_y;
-
+	DirectoryEntry m_root_entry;
 	glm::mat4 m_model;
 
 public:
+	void print_dir(DirectoryEntry& dir, std::string tab)
+	{
+		for (int i = 0; i < dir.directories.size(); i++)
+		{
+			std::cout << tab << dir.directories[i].name << std::endl;
+			print_dir(dir.directories[i], tab + "\t");
+		}
+
+		for (int i = 0; i < dir.files.size(); i++)
+		{
+			std::cout << tab << dir.files[i] << std::endl;
+		}
+	}
+
     bool init() override
     {
         m_camera = new Camera(45.0f,
@@ -468,6 +527,10 @@ public:
 		m_rotation = 60.0f;
 		m_grid_spacing = 1.0f;
 		m_grid_y = 0.0f;
+
+		find_assets("C:/Users/Dihara/Documents/Terminus Research", m_root_entry);
+
+		print_dir(m_root_entry, "");
 
         return m_debug_renderer.init(&m_device);
     }
@@ -493,6 +556,8 @@ public:
 		ImGui::InputFloat("Grid Y-Level", &m_grid_y);
         
         ImGui::End();
+
+		ImGui::ShowDemoWindow();
         
         m_debug_renderer.capsule(20.0f, 5.0f, glm::vec3(-20.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0));
         m_debug_renderer.grid(101.0f, 101.0f, m_grid_y, m_grid_spacing, glm::vec3(1.0f));
@@ -508,7 +573,7 @@ public:
     {
         m_debug_renderer.shutdown();
     }
-    
+
     void key_pressed(int code) override
     {
         if(code == GLFW_KEY_W)

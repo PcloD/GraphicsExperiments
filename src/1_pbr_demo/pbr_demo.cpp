@@ -10,171 +10,84 @@
 #include <utility.h>
 #include <scene.h>
 #include <material.h>
-#define STB_IMAGE_WRITE_IMPLEMENTATION
-#include <stb_image_write.h>
-#include <stb_image.h>
-
 #include <macros.h>
+#include <renderer.h>
+#include <memory>
+#include <windows.h>
 
-#define CUBEMAP_WIDTH 512
-#define CUBEMAP_HEIGHT 512
+#include <ImGuizmo.h>
+#include <imgui_helpers.h>
 
-#define PREFILTER_MIPMAPS 7
-
-#define PREFILTER_WIDTH 256
-#define PREFILTER_HEIGHT 256
-
-#define CAMERA_SPEED 0.05f
+#define CAMERA_SPEED 0.01f
 #define CAMERA_SENSITIVITY 0.02f
 #define CAMERA_ROLL 0.0
 
-#define BOX_WIDTH 1.5f
-#define BOX_HEIGHT 0.5f
-#define BOX_DEPTH 0.5f
-
-#define MAX_POINT_LIGHTS 8
-#define VEC3_TO_VEC4(vector) glm::vec4(vector.x, vector.y, vector.z, 1.0f)
-#define READ_AND_OFFSET(stream, dest, size, offset) stream.read((char*)dest, size); offset += size; stream.seekp(offset);
-
-#define NUM_ROWS 7
-#define NUM_COLUMNS 7
-
-struct DW_ALIGNED(16) PerFrameUniforms
+const char* kMeshAssets[] = 
 {
-    glm::mat4 u_last_vp_mat;
-    glm::mat4 u_vp_mat;
-    glm::mat4 u_inv_vp_mat;
-    glm::mat4 u_proj_mat;
-    glm::mat4 u_view_mat;
-    glm::vec4 u_view_pos;
-    glm::vec4 u_view_dir;
+	"mesh/cerberus.tsm",
+	"mesh/solid_shader_ball.tsm"
 };
 
-struct DW_ALIGNED(16) PerEntityUniforms
+const char* kMaterialAssets[] =
 {
-    glm::mat4 u_mvp_mat;
-    glm::mat4 u_model_mat;
-    glm::vec4 u_pos;
-	glm::vec4 u_metalRough;
+	"material/mat_bamboo_wood.json",
+	"material/mat_copper_rock.json",
+	"material/mat_gold_scuffed.json",
+	"material/mat_marble_speckled.json",
+	"material/mat_oak_floor.json",
+	"material/mat_octostone.json",
+	"material/mat_redbricks.json",
+	"material/mat_rusted_metal.json",
+	"material/mat_slate.json",
+	"material/mat_untitled_1.json"
 };
 
-struct PointLight
+struct DirectoryEntry
 {
-	glm::vec4 position;
-	glm::vec4 color;
+	std::string name;
+	std::string full_path;
+	std::vector<std::string> files;
+	std::vector<DirectoryEntry> directories;
 };
 
-struct DirectionalLight
+void find_assets(const std::string& name, DirectoryEntry& root_entry)
 {
-	glm::vec4 direction;
-	glm::vec4 color;
-};
+	std::string pattern(name);
+	pattern.append("\\*");
+	WIN32_FIND_DATA data;
+	HANDLE hFind;
+	if ((hFind = FindFirstFile(pattern.c_str(), &data)) != INVALID_HANDLE_VALUE) {
+		do {
+			std::string current = data.cFileName;
+			std::string path = name;
+			path += "/";
+			path += data.cFileName;
+			DWORD dwAttr = GetFileAttributes(path.c_str());
 
-struct DW_ALIGNED(16) PerSceneUniforms
-{
-	PointLight 		 pointLights[MAX_POINT_LIGHTS];
-	DirectionalLight directionalLight;
-	int				 pointLightCount;
-};
+			if (dwAttr != 0xffffffff && (dwAttr & FILE_ATTRIBUTE_DIRECTORY))
+			{
+				if (current != "." && current != "..")
+				{
+					DirectoryEntry dir;
+					dir.name = data.cFileName;
+					dir.full_path = path;
 
-struct DW_ALIGNED(16) CubeMapUniforms
-{
-	glm::mat4 proj;
-	glm::mat4 view;
-};
+					find_assets(path, dir);
+					root_entry.directories.push_back(dir);
+				}
+			}
+			else
+			{
+				if (current != "." && current != "..")
+				{
+					root_entry.files.push_back(data.cFileName);
+				}
+			}
 
-enum ImageFormat
-{
-	FORMAT_R8 = 0,
-	FORMAT_R16 = 1,
-	FORMAT_R32 = 2,
-	FORMAT_R8G8 = 3,
-	FORMAT_R16G16 = 4,
-	FORMAT_R32G32 = 5,
-	FORMAT_R8G8B8 = 6,
-	FORMAT_R16G16B16 = 7,
-	FORMAT_R32G32B32 = 8,
-	FORMAT_R8G8B8A8 = 9,
-	FORMAT_R16G16B16A16 = 10,
-	FORMAT_R32G32B32A32 = 11,
-	FORMAT_DEFAULT = 12
-};
-
-struct ImageHeader
-{
-	uint8_t  compression;
-	uint8_t  channelSize;
-	uint8_t  numChannels;
-	uint16_t numArraySlices;
-	uint8_t  numMipSlices;
-};
-
-struct MipSliceHeader
-{
-	uint16_t width;
-	uint16_t height;
-	int size;
-};
-
-struct FileHeader
-{
-	uint32_t magic;
-	uint8_t  version;
-	uint8_t  type;
-};
-
-const float clear_color[] = { 0.1f, 0.1f, 0.1f, 1.0f};
-
-const float vertices[] = {
-    -BOX_WIDTH, -BOX_HEIGHT, -BOX_DEPTH,  0.0f,  0.0f, -1.0f,
-    BOX_WIDTH, -BOX_HEIGHT, -BOX_DEPTH,  0.0f,  0.0f, -1.0f,
-    BOX_WIDTH,  BOX_HEIGHT, -BOX_DEPTH,  0.0f,  0.0f, -1.0f,
-    BOX_WIDTH,  BOX_HEIGHT, -BOX_DEPTH,  0.0f,  0.0f, -1.0f,
-    -BOX_WIDTH,  BOX_HEIGHT, -BOX_DEPTH,  0.0f,  0.0f, -1.0f,
-    -BOX_WIDTH, -BOX_HEIGHT, -BOX_DEPTH,  0.0f,  0.0f, -1.0f,
-    
-    -BOX_WIDTH, -BOX_HEIGHT,  BOX_DEPTH,  0.0f,  0.0f,  1.0f,
-    BOX_WIDTH, -BOX_HEIGHT,  BOX_DEPTH,  0.0f,  0.0f,  1.0f,
-    BOX_WIDTH,  BOX_HEIGHT,  BOX_DEPTH,  0.0f,  0.0f,  1.0f,
-    BOX_WIDTH,  BOX_HEIGHT,  BOX_DEPTH,  0.0f,  0.0f,  1.0f,
-    -BOX_WIDTH,  BOX_HEIGHT,  BOX_DEPTH,  0.0f,  0.0f,  1.0f,
-    -BOX_WIDTH, -BOX_HEIGHT,  BOX_DEPTH,  0.0f,  0.0f,  1.0f,
-    
-    -BOX_WIDTH,  BOX_HEIGHT,  BOX_DEPTH, -1.0f,  0.0f,  0.0f,
-    -BOX_WIDTH,  BOX_HEIGHT, -BOX_DEPTH, -1.0f,  0.0f,  0.0f,
-    -BOX_WIDTH, -BOX_HEIGHT, -BOX_DEPTH, -1.0f,  0.0f,  0.0f,
-    -BOX_WIDTH, -BOX_HEIGHT, -BOX_DEPTH, -1.0f,  0.0f,  0.0f,
-    -BOX_WIDTH, -BOX_HEIGHT,  BOX_DEPTH, -1.0f,  0.0f,  0.0f,
-    -BOX_WIDTH,  BOX_HEIGHT,  BOX_DEPTH, -1.0f,  0.0f,  0.0f,
-    
-    BOX_WIDTH,  BOX_HEIGHT,  BOX_DEPTH,  1.0f,  0.0f,  0.0f,
-    BOX_WIDTH,  BOX_HEIGHT, -BOX_DEPTH,  1.0f,  0.0f,  0.0f,
-    BOX_WIDTH, -BOX_HEIGHT, -BOX_DEPTH,  1.0f,  0.0f,  0.0f,
-    BOX_WIDTH, -BOX_HEIGHT, -BOX_DEPTH,  1.0f,  0.0f,  0.0f,
-    BOX_WIDTH, -BOX_HEIGHT,  BOX_DEPTH,  1.0f,  0.0f,  0.0f,
-    BOX_WIDTH,  BOX_HEIGHT,  BOX_DEPTH,  1.0f,  0.0f,  0.0f,
-    
-    -BOX_WIDTH, -BOX_HEIGHT, -BOX_DEPTH,  0.0f, -1.0f,  0.0f,
-    BOX_WIDTH, -BOX_HEIGHT, -BOX_DEPTH,  0.0f, -1.0f,  0.0f,
-    BOX_WIDTH, -BOX_HEIGHT,  BOX_DEPTH,  0.0f, -1.0f,  0.0f,
-    BOX_WIDTH, -BOX_HEIGHT,  BOX_DEPTH,  0.0f, -1.0f,  0.0f,
-    -BOX_WIDTH, -BOX_HEIGHT,  BOX_DEPTH,  0.0f, -1.0f,  0.0f,
-    -BOX_WIDTH, -BOX_HEIGHT, -BOX_DEPTH,  0.0f, -1.0f,  0.0f,
-    
-    -BOX_WIDTH,  BOX_HEIGHT, -BOX_DEPTH,  0.0f,  1.0f,  0.0f,
-    BOX_WIDTH,  BOX_HEIGHT, -BOX_DEPTH,  0.0f,  1.0f,  0.0f,
-    BOX_WIDTH,  BOX_HEIGHT,  BOX_DEPTH,  0.0f,  1.0f,  0.0f,
-    BOX_WIDTH,  BOX_HEIGHT,  BOX_DEPTH,  0.0f,  1.0f,  0.0f,
-    -BOX_WIDTH,  BOX_HEIGHT,  BOX_DEPTH,  0.0f,  1.0f,  0.0f,
-    -BOX_WIDTH,  BOX_HEIGHT, -BOX_DEPTH,  0.0f,  1.0f,  0.0f
-};
-
-const float kQuadVertices[] = {
-    -1.0f,  1.0f, 0.0f, 0.0f, 1.0f,
-    -1.0f, -1.0f, 0.0f, 0.0f, 0.0f,
-    1.0f,  1.0f, 0.0f, 1.0f, 1.0f,
-    1.0f, -1.0f, 0.0f, 1.0f, 0.0f,
-};
+		} while (FindNextFile(hFind, &data) != 0);
+		FindClose(hFind);
+	}
+}
 
 class Demo : public dw::Application
 {
@@ -182,134 +95,31 @@ private:
     float m_heading_speed = 0.0f;
     float m_sideways_speed = 0.0f;
     bool m_mouse_look = false;
-    PerFrameUniforms m_per_frame;
-    PerEntityUniforms m_per_entity;
-    PerSceneUniforms m_per_scene;
-    glm::vec3 m_cube_position = glm::vec3(0.0f);
-    glm::vec3 m_cube_scale = glm::vec3(1.0f);
-    glm::vec3 m_cube_rotation = glm::vec3(0.0f);
-    glm::mat4 m_cube_transform = glm::mat4(1.0f);
+	bool m_show_scene_window = false;
     Camera* m_camera;
-    InputLayout* m_quadLayout;
-    Shader* m_vs;
-    Shader* m_fs;
-    ShaderProgram* m_program;
-    UniformBuffer* m_per_frame_ubo;
-    UniformBuffer* m_per_entity_ubo;
-    UniformBuffer* m_per_scene_ubo;
-    RasterizerState* m_rs;
-    DepthStencilState* m_ds;
-    Texture2D* m_textureRT;
-    Texture2D* m_textureDS;
-    Framebuffer* m_offscreenFBO;
-    VertexBuffer* m_quadVBO;
-    VertexArray* m_quadVAO;
-    SamplerState* m_sampler;
-	SamplerState* m_cubemapSampler;
+	ID m_selected_entity = USHRT_MAX;
+	dw::Scene* m_scene;
+	dw::Renderer* m_renderer;
+	char m_name_buffer[128];
+	DirectoryEntry m_root_entry;
 
-    Shader* m_quadVs;
-    Shader* m_quadFs;
-    ShaderProgram* m_quadProgram;
-	//dw::Scene m_Scene;
-	dw::Mesh* m_Mesh;
-	dw::Material* m_Mat;
-
-	uint32_t m_sphereIndexCount;
-	IndexBuffer* m_sphereIBO;
-	VertexBuffer* m_sphereVBO;
-	VertexArray* m_sphereVAO;
-	InputLayout* m_sphereIL;
-	uint32_t m_uboAlign;
-
-	uint32_t m_cubeIndexCount;
-	VertexBuffer* m_cubeVBO;
-	VertexArray* m_cubeVAO;
-	InputLayout* m_cubeIL;
-
-	Shader* m_cubeMapVs;
-	Shader* m_cubeMapFs;
-	ShaderProgram* m_cubeMapProgram;
-
-	Shader* m_brdfIntegrateFs;
-	ShaderProgram* m_brdfIntegrateProgram;
-
-	Texture2D* m_brdfLUT;
-	Framebuffer* m_brdfLUTFBO;
-
-	TextureCube* m_envMap;
-	TextureCube* m_prefilteredMap;
-	TextureCube* m_irradianceMap;
-	UniformBuffer* m_cubeMapUBO;
-
-	CubeMapUniforms m_cubemapUniforms[6];
-	PerEntityUniforms m_sphereUniforms[NUM_ROWS * NUM_COLUMNS];
-    
 protected:
-	void saveBRDF()
+	void print_dir(DirectoryEntry& dir, std::string tab)
 	{
-		int width, height = 0;
-
-		m_device.texture_extents(m_brdfLUT, 0, width, height);
-
-		float* data = new float[width * height * 2];
-		float* rgbData = new float[width * height * 3];
-
-		m_device.texture_data(m_brdfLUT, 0, TextureType::TEXTURE2D, data);
-
-		int j = 0;
-
-		for (int i = 0; i < width * height * 2; i += 2)
+		for (int i = 0; i < dir.directories.size(); i++)
 		{
-			rgbData[j++] = data[i];
-			rgbData[j++] = data[i + 1];
-			rgbData[j++] = 0.0f;
+			std::cout << tab << dir.directories[i].name << std::endl;
+			print_dir(dir.directories[i], tab + "\t");
 		}
 
-		stbi_write_hdr("prefilter/preintegrate_brdf.hdr", width, height, 3, rgbData);
-
-		delete[]data;
-		delete[]rgbData;
-	}
-
-	void saveEnvMap()
-	{
-		int width, height = 0;
-		m_device.texture_extents(m_envMap, 0, width, height);
-
-		float* data = new float[width * height * 3];
-	
-		for (int i = 0; i < 6; i++)
+		for (int i = 0; i < dir.files.size(); i++)
 		{
-			m_device.texture_data(m_envMap, 0, TextureType::TEXTURECUBE_POSITIVE_X + i, data);
-			std::string fileName = "prefilter/env_map_" + std::to_string(i) + ".hdr";
-			stbi_write_hdr(fileName.c_str(), width, height, 3, data);
+			std::cout << tab << dir.files[i] << std::endl;
 		}
-
-		delete[]data;
-	}
-
-	void saveIrradianceMap()
-	{
-		int width, height = 0;
-		m_device.texture_extents(m_irradianceMap, 0, width, height);
-
-		float* data = new float[width * height * 3];
-
-		for (int i = 0; i < 6; i++)
-		{
-			m_device.texture_data(m_irradianceMap, 0, TextureType::TEXTURECUBE_POSITIVE_X + i, data);
-			std::string fileName = "prefilter/irradiance_map_" + std::to_string(i) + ".hdr";
-			stbi_write_hdr(fileName.c_str(), width, height, 3, data);
-		}
-
-		delete[]data;
 	}
 
     bool init() override
     {
-		//m_Mat = dw::Material::load("material/mat_rusted_iron.json", &m_device);
-		m_Mesh = dw::Mesh::load("mesh/cerberus.tsm", &m_device);
-		
         m_camera = new Camera(45.0f,
                             0.1f,
                             1000.0f,
@@ -317,981 +127,120 @@ protected:
                             glm::vec3(0.0f, 0.0f, 10.0f),
                             glm::vec3(0.0f, 0.0f, -1.0f));
         
-        if(!createGeometry())
-            return false;
-    
-        if(!compileShaders())
-            return false;
+		m_renderer = new dw::Renderer(&m_device, m_width, m_height);
+		m_scene = dw::Scene::load("scene.json", &m_device, m_renderer);
 
-		createSphereTransforms();
-        
-        BufferCreateDesc per_frame_ubo_desc;
-		DW_ZERO_MEMORY(per_frame_ubo_desc);
-        per_frame_ubo_desc.data = nullptr;
-        per_frame_ubo_desc.data_type = DataType::FLOAT;
-        per_frame_ubo_desc.size = sizeof(PerFrameUniforms);
-        per_frame_ubo_desc.usage_type = BufferUsageType::DYNAMIC;
-        
-		m_uboAlign = m_device.uniform_buffer_alignment();
-
-        BufferCreateDesc per_entity_ubo_desc;
-		DW_ZERO_MEMORY(per_entity_ubo_desc);
-        per_entity_ubo_desc.data = nullptr;
-        per_entity_ubo_desc.data_type = DataType::FLOAT;
-        per_entity_ubo_desc.size = m_uboAlign * NUM_ROWS * NUM_COLUMNS;
-        per_entity_ubo_desc.usage_type = BufferUsageType::DYNAMIC;
-        
-        BufferCreateDesc per_scene_ubo_desc;
-		DW_ZERO_MEMORY(per_scene_ubo_desc);
-        per_scene_ubo_desc.data = nullptr;
-        per_scene_ubo_desc.data_type = DataType::FLOAT;
-        per_scene_ubo_desc.size = sizeof(PerSceneUniforms);
-        per_scene_ubo_desc.usage_type = BufferUsageType::DYNAMIC;
-
-		BufferCreateDesc cubemapUboDesc;
-		DW_ZERO_MEMORY(cubemapUboDesc);
-		cubemapUboDesc.data = nullptr;
-		cubemapUboDesc.data_type = DataType::FLOAT;
-		cubemapUboDesc.size = m_uboAlign * 6;
-		cubemapUboDesc.usage_type = BufferUsageType::DYNAMIC;
-        
-        m_per_frame_ubo = m_device.create_uniform_buffer(per_frame_ubo_desc);
-        m_per_entity_ubo = m_device.create_uniform_buffer(per_entity_ubo_desc);
-        m_per_scene_ubo = m_device.create_uniform_buffer(per_scene_ubo_desc);
-		m_cubeMapUBO = m_device.create_uniform_buffer(cubemapUboDesc);
-        
-        if (!m_per_frame_ubo || !m_per_entity_ubo)
-        {
-            LOG_FATAL("Failed to create Uniform Buffers");
-            return 1;
-        }
-        
-        RasterizerStateCreateDesc rs_desc;
-		DW_ZERO_MEMORY(rs_desc);
-        rs_desc.cull_mode = CullMode::NONE;
-        rs_desc.fill_mode = FillMode::SOLID;
-        rs_desc.front_winding_ccw = true;
-        rs_desc.multisample = true;
-        rs_desc.scissor = false;
-        
-        m_rs = m_device.create_rasterizer_state(rs_desc);
-        
-        DepthStencilStateCreateDesc ds_desc;
-		DW_ZERO_MEMORY(ds_desc);
-        ds_desc.depth_mask = true;
-        ds_desc.enable_depth_test = true;
-        ds_desc.enable_stencil_test = false;
-        ds_desc.depth_cmp_func = ComparisonFunction::LESS_EQUAL;
-        
-        m_ds = m_device.create_depth_stencil_state(ds_desc);
-        
-		m_per_scene.pointLightCount = 4;
-
-        m_per_scene.pointLights[0].position = glm::vec4(-10.0f, 20.0f, 10.0f, 1.0f);
-        m_per_scene.pointLights[0].color = glm::vec4(300.0f);
-
-		m_per_scene.pointLights[1].position = glm::vec4(10.0f, 20.0f, 10.0f, 1.0f);
-		m_per_scene.pointLights[1].color = glm::vec4(300.0f);
-
-		m_per_scene.pointLights[2].position = glm::vec4(-10.0f, -20.0f, 10.0f, 1.0f);
-		m_per_scene.pointLights[2].color = glm::vec4(300.0f);
-
-		m_per_scene.pointLights[3].position = glm::vec4(10.0f, -20.0f, 10.0f, 1.0f);
-		m_per_scene.pointLights[3].color = glm::vec4(300.0f);
-	
-		m_cube_transform = glm::mat4(1.0f);
-		m_cube_transform = glm::scale(m_cube_transform, m_cube_scale);
-        
-		if (!createFramebuffers())
+		if (!m_scene)
+		{
+			LOG_ERROR("Failed to load scene!");
 			return false;
-        
-        SamplerStateCreateDesc ssDesc;
-        DW_ZERO_MEMORY(ssDesc);
-        
-        ssDesc.max_anisotropy = 0;
-        ssDesc.min_filter = TextureFilteringMode::LINEAR;
-        ssDesc.mag_filter = TextureFilteringMode::LINEAR;
-        ssDesc.wrap_mode_u = TextureWrapMode::CLAMP_TO_EDGE;
-        ssDesc.wrap_mode_v = TextureWrapMode::CLAMP_TO_EDGE;
-        ssDesc.wrap_mode_w = TextureWrapMode::CLAMP_TO_EDGE;
-        
-        m_sampler = m_device.create_sampler_state(ssDesc);
-
-		ssDesc.min_filter = TextureFilteringMode::LINEAR_ALL;
-		ssDesc.mag_filter = TextureFilteringMode::LINEAR;
-		ssDesc.wrap_mode_u = TextureWrapMode::REPEAT;
-		ssDesc.wrap_mode_v = TextureWrapMode::REPEAT;
-		ssDesc.wrap_mode_w = TextureWrapMode::REPEAT;
-
-		m_cubemapSampler = m_device.create_sampler_state(ssDesc);
-
-		glm::mat4 captureProjection = glm::perspective(glm::radians(90.0f), 1.0f, 0.1f, 10.0f);
-		glm::mat4 captureViews[] =
-		{
-			glm::lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(1.0f,  0.0f,  0.0f), glm::vec3(0.0f, -1.0f,  0.0f)),
-			glm::lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(-1.0f,  0.0f,  0.0f), glm::vec3(0.0f, -1.0f,  0.0f)),
-			glm::lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f,  1.0f,  0.0f), glm::vec3(0.0f,  0.0f,  1.0f)),
-			glm::lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, -1.0f,  0.0f), glm::vec3(0.0f,  0.0f, -1.0f)),
-			glm::lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f,  0.0f,  1.0f), glm::vec3(0.0f, -1.0f,  0.0f)),
-			glm::lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f,  0.0f, -1.0f), glm::vec3(0.0f, -1.0f,  0.0f))
-		};
-
-		for (int i = 0; i < 6; i++)
-		{
-			m_cubemapUniforms[i].proj = captureProjection;
-			m_cubemapUniforms[i].view = captureViews[i];
 		}
 
-		preintegrateBRDF();
+		m_renderer->set_scene(m_scene);
 
-		m_device.wait_for_idle();
+		find_assets("C:/Users/Dihara/Desktop/TextureExport", m_root_entry);
 
-		//saveBRDF();
+		print_dir(m_root_entry, "");
 
         return true;
     }
 
-	void createSphereTransforms()
-	{
-		glm::vec4 startPos = glm::vec4(0.0f);
-
-		for (uint32_t i = 0; i < NUM_ROWS; i++)
-		{
-			for (uint32_t j = 0; j < NUM_COLUMNS; j++)
-			{
-				m_sphereUniforms[(i * NUM_COLUMNS) + j].u_pos = startPos;
-				m_sphereUniforms[(i * NUM_COLUMNS) + j].u_model_mat = glm::rotate(glm::mat4(1.0f), glm::radians(-90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
-			}
-		}
-	}
-    
-    bool compileShaders()
-    {
-        std::string vs_str;
-        Utility::ReadText("shader/pbr_vs.glsl", vs_str);
-        
-        std::string fs_str;
-        Utility::ReadText("shader/pbr_fs.glsl", fs_str);
-        
-        m_vs = m_device.create_shader(vs_str.c_str(), ShaderType::VERTEX);
-        m_fs = m_device.create_shader(fs_str.c_str(), ShaderType::FRAGMENT);
-        
-        if (!m_vs || !m_fs)
-        {
-            LOG_FATAL("Failed to create Shaders");
-            return false;
-        }
-        
-        Shader* shaders[] = { m_vs, m_fs };
-        m_program = m_device.create_shader_program(shaders, 2);
-        
-        if (!m_program)
-        {
-            LOG_FATAL("Failed to create Shader Program");
-            return false;
-        }
-        
-        vs_str.clear();
-        Utility::ReadText("shader/quad_vs.glsl", vs_str);
-        
-        fs_str.clear();
-        Utility::ReadText("shader/quad_fs.glsl", fs_str);
-        
-        m_quadVs = m_device.create_shader(vs_str.c_str(), ShaderType::VERTEX);
-        m_quadFs = m_device.create_shader(fs_str.c_str(), ShaderType::FRAGMENT);
-        
-        if (!m_quadVs || !m_quadFs)
-        {
-            LOG_FATAL("Failed to create Shaders");
-            return false;
-        }
-        
-        Shader* quadShaders[] = { m_quadVs, m_quadFs };
-        m_quadProgram = m_device.create_shader_program(quadShaders, 2);
-        
-        if (!m_quadProgram)
-        {
-            LOG_FATAL("Failed to create Shader Program");
-            return false;
-        }
-        
-		vs_str.clear();
-		Utility::ReadText("shader/cubemap_vs.glsl", vs_str);
-
-		fs_str.clear();
-		Utility::ReadText("shader/cubemap_fs.glsl", fs_str);
-
-		m_cubeMapVs = m_device.create_shader(vs_str.c_str(), ShaderType::VERTEX);
-		m_cubeMapFs = m_device.create_shader(fs_str.c_str(), ShaderType::FRAGMENT);
-
-		if (!m_cubeMapVs || !m_cubeMapFs)
-		{
-			LOG_FATAL("Failed to create Shaders");
-			return false;
-		}
-
-		Shader* cubemapShaders[] = { m_cubeMapVs, m_cubeMapFs };
-		m_cubeMapProgram = m_device.create_shader_program(cubemapShaders, 2);
-
-		if (!m_cubeMapProgram)
-		{
-			LOG_FATAL("Failed to create Shader Program");
-			return false;
-		}
-
-		fs_str.clear();
-		Utility::ReadText("shader/prefilter_fs.glsl", fs_str);
-
-		fs_str.clear();
-		Utility::ReadText("shader/precompute_fs.glsl", fs_str);
-
-		m_brdfIntegrateFs = m_device.create_shader(fs_str.c_str(), ShaderType::FRAGMENT);
-
-		if (!m_brdfIntegrateFs)
-		{
-			LOG_FATAL("Failed to create Shaders");
-			return false;
-		}
-
-		Shader* brdfShaders[] = { m_quadVs, m_brdfIntegrateFs };
-		m_brdfIntegrateProgram = m_device.create_shader_program(brdfShaders, 2);
-
-		if (!m_brdfIntegrateProgram)
-		{
-			LOG_FATAL("Failed to create Shader Program");
-			return false;
-		}
-        return true;
-    }
-
-	bool createSphere()
-	{
-		std::vector<glm::vec3> positions;
-		std::vector<glm::vec2> uv;
-		std::vector<glm::vec3> normals;
-		std::vector<uint32_t> indices;
-
-		const unsigned int X_SEGMENTS = 64;
-		const unsigned int Y_SEGMENTS = 64;
-		const float PI = 3.14159265359;
-		for (unsigned int y = 0; y <= Y_SEGMENTS; ++y)
-		{
-			for (unsigned int x = 0; x <= X_SEGMENTS; ++x)
-			{
-				float xSegment = (float)x / (float)X_SEGMENTS;
-				float ySegment = (float)y / (float)Y_SEGMENTS;
-				float xPos = std::cos(xSegment * 2.0f * PI) * std::sin(ySegment * PI);
-				float yPos = std::cos(ySegment * PI);
-				float zPos = std::sin(xSegment * 2.0f * PI) * std::sin(ySegment * PI);
-
-				positions.push_back(glm::vec3(xPos, yPos, zPos));
-				uv.push_back(glm::vec2(xSegment, ySegment));
-				normals.push_back(glm::vec3(xPos, yPos, zPos));
-			}
-		}
-
-		bool oddRow = false;
-		for (int y = 0; y < Y_SEGMENTS; ++y)
-		{
-			if (!oddRow) // even rows: y == 0, y == 2; and so on
-			{
-				for (int x = 0; x <= X_SEGMENTS; ++x)
-				{
-					indices.push_back(y       * (X_SEGMENTS + 1) + x);
-					indices.push_back((y + 1) * (X_SEGMENTS + 1) + x);
-				}
-			}
-			else
-			{
-				for (int x = X_SEGMENTS; x >= 0; --x)
-				{
-					indices.push_back((y + 1) * (X_SEGMENTS + 1) + x);
-					indices.push_back(y       * (X_SEGMENTS + 1) + x);
-				}
-			}
-			oddRow = !oddRow;
-		}
-
-		m_sphereIndexCount = indices.size();
-
-		std::vector<float> data;
-		for (int i = 0; i < positions.size(); ++i)
-		{
-			data.push_back(positions[i].x);
-			data.push_back(positions[i].y);
-			data.push_back(positions[i].z);
-			if (uv.size() > 0)
-			{
-				data.push_back(uv[i].x);
-				data.push_back(uv[i].y);
-			}
-			if (normals.size() > 0)
-			{
-				data.push_back(normals[i].x);
-				data.push_back(normals[i].y);
-				data.push_back(normals[i].z);
-			}
-		}
-
-		BufferCreateDesc bc;
-		InputLayoutCreateDesc ilcd;
-		VertexArrayCreateDesc vcd;
-
-		DW_ZERO_MEMORY(bc);
-		bc.data = (float*)&data[0];
-		bc.data_type = DataType::FLOAT;
-		bc.size = sizeof(float) * data.size();
-		bc.usage_type = BufferUsageType::STATIC;
-
-		m_sphereVBO = m_device.create_vertex_buffer(bc);
-
-		DW_ZERO_MEMORY(bc);
-		bc.data = (float*)&indices[0];
-		bc.data_type = DataType::UINT32;
-		bc.size = sizeof(uint32_t)* indices.size();
-		bc.usage_type = BufferUsageType::STATIC;
-
-		m_sphereIBO = m_device.create_index_buffer(bc);
-
-		InputElement elements[] =
-		{
-			{ 3, DataType::FLOAT, false, 0, "POSITION" },
-			{ 2, DataType::FLOAT, false, sizeof(float) * 3, "TEXCOORD" },
-	        { 3, DataType::FLOAT, false, sizeof(float) * 5, "NORMAL" }
-		};
-
-		DW_ZERO_MEMORY(ilcd);
-		ilcd.elements = elements;
-		ilcd.num_elements = 3;
-		ilcd.vertex_size = sizeof(float) * 8;
-
-		m_sphereIL = m_device.create_input_layout(ilcd);
-
-		DW_ZERO_MEMORY(vcd);
-		vcd.index_buffer = m_sphereIBO;
-		vcd.vertex_buffer = m_sphereVBO;
-		vcd.layout = m_sphereIL;
-
-		m_sphereVAO= m_device.create_vertex_array(vcd);
-
-		if (!m_sphereVBO || !m_sphereIBO || !m_sphereVAO)
-		{
-			LOG_FATAL("Failed to create Vertex Buffers/Arrays");
-			return false;
-		}
-
-		return true;
-	}
-
-	bool createCube()
-	{
-		float cubeVertices[] = {
-			// back face
-			-1.0f, -1.0f, -1.0f,  0.0f,  0.0f, -1.0f, 0.0f, 0.0f, // bottom-left
-			1.0f,  1.0f, -1.0f,  0.0f,  0.0f, -1.0f, 1.0f, 1.0f, // top-right
-			1.0f, -1.0f, -1.0f,  0.0f,  0.0f, -1.0f, 1.0f, 0.0f, // bottom-right         
-			1.0f,  1.0f, -1.0f,  0.0f,  0.0f, -1.0f, 1.0f, 1.0f, // top-right
-			-1.0f, -1.0f, -1.0f,  0.0f,  0.0f, -1.0f, 0.0f, 0.0f, // bottom-left
-			-1.0f,  1.0f, -1.0f,  0.0f,  0.0f, -1.0f, 0.0f, 1.0f, // top-left
-																  // front face
-			 -1.0f, -1.0f,  1.0f,  0.0f,  0.0f,  1.0f, 0.0f, 0.0f, // bottom-left
-			 1.0f, -1.0f,  1.0f,  0.0f,  0.0f,  1.0f, 1.0f, 0.0f, // bottom-right
-			 1.0f,  1.0f,  1.0f,  0.0f,  0.0f,  1.0f, 1.0f, 1.0f, // top-right
-			 1.0f,  1.0f,  1.0f,  0.0f,  0.0f,  1.0f, 1.0f, 1.0f, // top-right
-			 -1.0f,  1.0f,  1.0f,  0.0f,  0.0f,  1.0f, 0.0f, 1.0f, // top-left
-			 -1.0f, -1.0f,  1.0f,  0.0f,  0.0f,  1.0f, 0.0f, 0.0f, // bottom-left
-			// left face
-			-1.0f,  1.0f,  1.0f, -1.0f,  0.0f,  0.0f, 1.0f, 0.0f, // top-right
-			-1.0f,  1.0f, -1.0f, -1.0f,  0.0f,  0.0f, 1.0f, 1.0f, // top-left
-			-1.0f, -1.0f, -1.0f, -1.0f,  0.0f,  0.0f, 0.0f, 1.0f, // bottom-left
-			-1.0f, -1.0f, -1.0f, -1.0f,  0.0f,  0.0f, 0.0f, 1.0f, // bottom-left
-			-1.0f, -1.0f,  1.0f, -1.0f,  0.0f,  0.0f, 0.0f, 0.0f, // bottom-right
-			-1.0f,  1.0f,  1.0f, -1.0f,  0.0f,  0.0f, 1.0f, 0.0f, // top-right
-																  // right face
-		 1.0f,  1.0f,  1.0f,  1.0f,  0.0f,  0.0f, 1.0f, 0.0f, // top-left
-		 1.0f, -1.0f, -1.0f,  1.0f,  0.0f,  0.0f, 0.0f, 1.0f, // bottom-right
-		 1.0f,  1.0f, -1.0f,  1.0f,  0.0f,  0.0f, 1.0f, 1.0f, // top-right         
-		 1.0f, -1.0f, -1.0f,  1.0f,  0.0f,  0.0f, 0.0f, 1.0f, // bottom-right
-		 1.0f,  1.0f,  1.0f,  1.0f,  0.0f,  0.0f, 1.0f, 0.0f, // top-left
-		 1.0f, -1.0f,  1.0f,  1.0f,  0.0f,  0.0f, 0.0f, 0.0f, // bottom-left     
-															   // bottom face
-		-1.0f, -1.0f, -1.0f,  0.0f, -1.0f,  0.0f, 0.0f, 1.0f, // top-right
-		1.0f, -1.0f, -1.0f,  0.0f, -1.0f,  0.0f, 1.0f, 1.0f, // top-left
-		1.0f, -1.0f,  1.0f,  0.0f, -1.0f,  0.0f, 1.0f, 0.0f, // bottom-left
-		1.0f, -1.0f,  1.0f,  0.0f, -1.0f,  0.0f, 1.0f, 0.0f, // bottom-left
-		-1.0f, -1.0f,  1.0f,  0.0f, -1.0f,  0.0f, 0.0f, 0.0f, // bottom-right
-		-1.0f, -1.0f, -1.0f,  0.0f, -1.0f,  0.0f, 0.0f, 1.0f, // top-right
-		// top face
-		-1.0f,  1.0f, -1.0f,  0.0f,  1.0f,  0.0f, 0.0f, 1.0f, // top-left
-		1.0f,  1.0f , 1.0f,  0.0f,  1.0f,  0.0f, 1.0f, 0.0f, // bottom-right
-		1.0f,  1.0f, -1.0f,  0.0f,  1.0f,  0.0f, 1.0f, 1.0f, // top-right     
-		1.0f,  1.0f,  1.0f,  0.0f,  1.0f,  0.0f, 1.0f, 0.0f, // bottom-right
-		-1.0f,  1.0f, -1.0f,  0.0f,  1.0f,  0.0f, 0.0f, 1.0f, // top-left
-		-1.0f,  1.0f,  1.0f,  0.0f,  1.0f,  0.0f, 0.0f, 0.0f  // bottom-left        
-		};
-
-		BufferCreateDesc bc;
-		InputLayoutCreateDesc ilcd;
-		VertexArrayCreateDesc vcd;
-
-		DW_ZERO_MEMORY(bc);
-		bc.data = (float*)&cubeVertices[0];
-		bc.data_type = DataType::FLOAT;
-		bc.size = sizeof(cubeVertices);
-		bc.usage_type = BufferUsageType::STATIC;
-
-		m_cubeVBO = m_device.create_vertex_buffer(bc);
-
-		InputElement elements[] =
-		{
-			{ 3, DataType::FLOAT, false, 0, "POSITION" },
-			{ 3, DataType::FLOAT, false, sizeof(float) * 3, "NORMAL" },
-			{ 2, DataType::FLOAT, false, sizeof(float) * 6, "TEXCOORD" }
-		};
-
-		DW_ZERO_MEMORY(ilcd);
-		ilcd.elements = elements;
-		ilcd.num_elements = 3;
-		ilcd.vertex_size = sizeof(float) * 8;
-
-		m_cubeIL = m_device.create_input_layout(ilcd);
-
-		DW_ZERO_MEMORY(vcd);
-		vcd.index_buffer = nullptr;
-		vcd.vertex_buffer = m_cubeVBO;
-		vcd.layout = m_cubeIL;
-
-		m_cubeVAO = m_device.create_vertex_array(vcd);
-
-		if (!m_cubeVBO || !m_cubeVAO)
-		{
-			LOG_FATAL("Failed to create Vertex Buffers/Arrays");
-			return false;
-		}
-
-		return true;
-	}
-
-	void renderToCubeMap(Framebuffer** fbos, uint32_t width, uint32_t height)
-	{
-		char* mem = (char*)m_device.map_buffer(m_cubeMapUBO, BufferMapType::WRITE);
-
-		for (int i = 0; i < 6; i++)
-		{
-			size_t offset = m_uboAlign * i;
-			memcpy(mem + offset, &m_cubemapUniforms[i], sizeof(CubeMapUniforms));
-		}
-
-		m_device.unmap_buffer(m_cubeMapUBO);
-
-		for (int i = 0; i < 6; i++)
-		{
-			m_device.bind_framebuffer(fbos[i]);
-			m_device.set_viewport(width, height, 0, 0);
-			m_device.bind_uniform_buffer_range(m_cubeMapUBO, ShaderType::VERTEX, 0, m_uboAlign * i, sizeof(CubeMapUniforms));
-			m_device.clear_framebuffer(ClearTarget::ALL, (float*)clear_color);
-			renderCube();
-		}
-	}
-
-	void renderCubeMap()
-	{
-		m_device.bind_shader_program(m_cubeMapProgram);
-		m_device.bind_uniform_buffer(m_per_frame_ubo, ShaderType::VERTEX, 0);
-		m_device.bind_sampler_state(m_cubemapSampler, ShaderType::FRAGMENT, 0);
-		m_device.bind_texture(m_envMap, ShaderType::FRAGMENT, 0);
-		//m_device.bind_texture(m_irradianceMap, ShaderType::FRAGMENT, 0);
-		//m_device.bind_texture(m_prefilteredMap, ShaderType::FRAGMENT, 0);
-		//m_device.bind_framebuffer(m_offscreenFBO);
-		m_device.bind_framebuffer(nullptr);
-		m_device.set_viewport(m_width, m_height, 0, 0);
-		renderCube();
-	}
-
-	void preintegrateBRDF()
-	{
-		m_device.bind_framebuffer(m_brdfLUTFBO);
-		m_device.set_viewport(512, 512, 0, 0);
-
-		float clear[] = { 0.0f, 1.0f, 0.0f, 1.0f };
-		m_device.clear_framebuffer(ClearTarget::ALL, clear);
-
-		m_device.bind_shader_program(m_brdfIntegrateProgram);
-
-		m_device.set_primitive_type(PrimitiveType::TRIANGLE_STRIP);
-		m_device.bind_vertex_array(m_quadVAO);
-		m_device.draw(0, 4);
-	}
-
-	TextureCube* loadTRMImage(const char* file)
-	{
-		TextureCubeCreateDesc desc;
-		DW_ZERO_MEMORY(desc);
-
-		TextureCube* cube;
-
-		std::fstream f(file, std::ios::in | std::ios::binary);
-
-		FileHeader fileheader;
-		uint16_t nameLength = 0;
-		char name[256];
-		ImageHeader imageHeader;
-
-		long offset = 0;
-
-		f.seekp(offset);
-
-		READ_AND_OFFSET(f, &fileheader, sizeof(FileHeader), offset);
-		READ_AND_OFFSET(f, &nameLength, sizeof(uint16_t), offset);
-		READ_AND_OFFSET(f, &name[0], sizeof(char) * nameLength, offset);
-
-		name[nameLength] = '\0';
-		std::cout << "Name: " << name << std::endl;
-
-		READ_AND_OFFSET(f, &imageHeader, sizeof(ImageHeader), offset);
-
-		std::cout << "Channel Size: " << imageHeader.channelSize << std::endl;
-		std::cout << "Channel Count: " << imageHeader.numChannels << std::endl;
-		std::cout << "Array Slice Count: " << imageHeader.numArraySlices << std::endl;
-		std::cout << "Mip Slice Count: " << imageHeader.numMipSlices << std::endl;
-
-		desc.mipmapLevels = imageHeader.numMipSlices;
-		desc.format = TextureFormat::R16G16B16_FLOAT;
-
-		for (int arraySlice = 0; arraySlice < imageHeader.numArraySlices; arraySlice++)
-		{
-			std::cout << std::endl;
-			std::cout << "Array Slice: " << arraySlice << std::endl;
-
-			for (int mipSlice = 0; mipSlice < imageHeader.numMipSlices; mipSlice++)
-			{
-				MipSliceHeader mipHeader;
-				char* imageData;
-
-				READ_AND_OFFSET(f, &mipHeader, sizeof(MipSliceHeader), offset);
-
-				if (arraySlice == 0 && mipSlice == 0)
-				{
-					desc.width = mipHeader.width;
-					desc.height = mipHeader.height;
-					cube = m_device.create_texture_cube(desc);
-				}
-
-				std::cout << std::endl;
-				std::cout << "Mip Slice: " << mipSlice << std::endl;
-				std::cout << "Width: " << mipHeader.width << std::endl;
-				std::cout << "Height: " << mipHeader.height << std::endl;
-
-				imageData = (char*)malloc(mipHeader.size);
-
-				READ_AND_OFFSET(f, imageData, mipHeader.size, offset);
-
-				m_device.set_texture_data(cube,
-										  mipSlice,
-										  TextureType::TEXTURECUBE + arraySlice + 1, 
-										  mipHeader.width, 
-										  mipHeader.height, 
-										  imageData);
-
-				free(imageData);
-			}
-		}
-
-		f.close();
-
-		return cube;
-	}
-
-	bool createFramebuffers()
-	{
-		Texture2DCreateDesc rtDesc;
-		DW_ZERO_MEMORY(rtDesc);
-		rtDesc.format = TextureFormat::R8G8B8A8_UNORM;
-		rtDesc.height = m_height;
-		rtDesc.width = m_width;
-		rtDesc.mipmap_levels = 10;
-
-		m_textureRT = m_device.create_texture_2d(rtDesc);
-
-		if (!m_textureRT)
-		{
-			std::cout << "Failed to create render target" << std::endl;
-			return false;
-		}
-
-		rtDesc.format = TextureFormat::D32_FLOAT_S8_UINT;
-
-		m_textureDS = m_device.create_texture_2d(rtDesc);
-
-		if (!m_textureDS)
-		{
-			std::cout << "Failed to create depth target" << std::endl;
-			return false;
-		}
-
-		rtDesc.format = TextureFormat::R16G16_FLOAT;
-		rtDesc.height = 512;
-		rtDesc.width = 512;
-
-		m_brdfLUT = m_device.create_texture_2d(rtDesc);
-
-		if (!m_brdfLUT)
-		{
-			std::cout << "Failed to create BRDF LUT" << std::endl;
-			return false;
-		}
-
-		FramebufferCreateDesc fbDesc;
-		DW_ZERO_MEMORY(fbDesc);
-		fbDesc.renderTargetCount = 1;
-
-		fbDesc.depthStencilTarget.texture = m_textureDS;
-		fbDesc.depthStencilTarget.arraySlice = 0;
-		fbDesc.depthStencilTarget.mipSlice = 0;
-
-		fbDesc.renderTargets[0].texture = m_textureRT;
-		fbDesc.renderTargets[0].arraySlice = 0;
-		fbDesc.renderTargets[0].mipSlice = 0;
-
-		m_offscreenFBO = m_device.create_framebuffer(fbDesc);
-
-		if (!m_offscreenFBO)
-		{
-			std::cout << "Failed to create Framebuffer" << std::endl;
-			return false;
-		}
-
-		fbDesc.renderTargets[0].texture = m_brdfLUT;
-		fbDesc.renderTargets[0].arraySlice = 0;
-		fbDesc.renderTargets[0].mipSlice = 0;
-
-		m_brdfLUTFBO = m_device.create_framebuffer(fbDesc);
-
-		if (!m_brdfLUTFBO)
-		{
-			std::cout << "Failed to create Framebuffer" << std::endl;
-			return false;
-		}
-
-		m_envMap = loadTRMImage("texture/Arches_E_PineTree_3k.trm");
-		m_irradianceMap = loadTRMImage("texture/irradiance.trm");
-		m_prefilteredMap = loadTRMImage("texture/radiance.trm");
-
-		return true;
-	}
-    
-    bool createGeometry()
-    {
-		// Create Sphere
-
-		if (!createSphere())
-			return false;
-
-		// Create Cube
-
-		if (!createCube())
-			return false;
-
-        // Create Quad
-
-		BufferCreateDesc bc;
-		InputLayoutCreateDesc ilcd;
-		VertexArrayCreateDesc vcd;
-        
-        DW_ZERO_MEMORY(bc);
-        bc.data = (float*)kQuadVertices;
-        bc.data_type = DataType::FLOAT;
-        bc.size = sizeof(kQuadVertices);
-        bc.usage_type = BufferUsageType::STATIC;
-        
-        m_quadVBO = m_device.create_vertex_buffer(bc);
-        
-        InputElement quadElements[] =
-        {
-            { 3, DataType::FLOAT, false, 0, "POSITION" },
-            { 2, DataType::FLOAT, false, sizeof(float) * 3, "TEXCOORD" }
-            //        { 2, DataType::FLOAT, false, sizeof(float) * 3, "TEXCOORD" }
-        };
-
-        DW_ZERO_MEMORY(ilcd);
-        ilcd.elements = quadElements;
-        ilcd.num_elements = 2;
-        ilcd.vertex_size = sizeof(float) * 5;
-        
-        m_quadLayout = m_device.create_input_layout(ilcd);
-        
-        DW_ZERO_MEMORY(vcd);
-        vcd.index_buffer = nullptr; //ibo;
-        vcd.vertex_buffer = m_quadVBO;
-        vcd.layout = m_quadLayout;
-        
-        m_quadVAO = m_device.create_vertex_array(vcd);
-        
-        if (!m_quadVBO || !m_quadVAO)
-        {
-            LOG_FATAL("Failed to create Vertex Buffers/Arrays");
-            return false;
-        }
-
-        return true;
-    }
-
-	void updateUniforms()
-	{
-		updateCamera();
-
-		for (uint32_t i = 0; i < 4; i++)
-		{
-			m_per_scene.pointLights[i].position += glm::vec4(sin(glfwGetTime() * 5.0) * 0.5, 0.0, 0.0, 0.0);
-		}
-
-		//m_device.bind_framebuffer(m_offscreenFBO);
-		m_device.bind_framebuffer(nullptr);
-		m_device.set_viewport(m_width, m_height, 0, 0);
-		m_device.clear_framebuffer(ClearTarget::ALL, (float*)clear_color);
-
-		m_per_frame.u_proj_mat = m_camera->m_projection;
-		m_per_frame.u_view_mat = m_camera->m_view;
-		m_per_frame.u_view_pos = VEC3_TO_VEC4(m_camera->m_position);
-
-		//ImGuizmo::BeginFrame();
-		//ImGui::Begin("Matrix Inspector");
-		//
-		//EditTransform(glm::value_ptr(m_camera->m_view),
-		//              glm::value_ptr(m_camera->m_projection),
-		//              glm::value_ptr(m_cube_transform));
-		//ImGui::End();
-
-		m_per_entity.u_model_mat = m_cube_transform;
-		m_per_entity.u_pos = VEC3_TO_VEC4(m_cube_position);
-
-
-
-		void* mem = m_device.map_buffer(m_per_frame_ubo, BufferMapType::WRITE);
-
-		if (mem)
-		{
-			memcpy(mem, &m_per_frame, sizeof(PerFrameUniforms));
-			m_device.unmap_buffer(m_per_frame_ubo);
-		}
-
-		mem = m_device.map_buffer(m_per_scene_ubo, BufferMapType::WRITE);
-
-		if (mem)
-		{
-			memcpy(mem, &m_per_scene, sizeof(PerSceneUniforms));
-			m_device.unmap_buffer(m_per_scene_ubo);
-		}
-	}
-    
     void update(double delta) override
     {
-		//renderPrefilteredMap();
-
-		updateUniforms();
-
-		char* mem = (char*)m_device.map_buffer(m_per_entity_ubo, BufferMapType::WRITE);
-
-		if (mem)
-		{
-			for (uint32_t i = 0; i < NUM_ROWS; i++)
-			{
-				for (uint32_t j = 0; j < NUM_COLUMNS; j++)
-				{
-					uint32_t index = (i * NUM_COLUMNS) + j;
-					size_t offset = m_uboAlign * index;
-					memcpy(mem + offset, &m_sphereUniforms[index], sizeof(PerEntityUniforms));
-				}
-			}
-
-			m_device.unmap_buffer(m_per_entity_ubo);
-		}
-         
-        m_device.bind_rasterizer_state(m_rs);
-        m_device.bind_depth_stencil_state(m_ds);
-
-		m_device.bind_uniform_buffer(m_per_frame_ubo, ShaderType::VERTEX, 0);
-		m_device.bind_uniform_buffer(m_per_scene_ubo, ShaderType::FRAGMENT, 2);
-        
-		//renderSpheres();
-
-		dw::SubMesh* submeshes = m_Mesh->sub_meshes();
-
-		dw::Material* mat = submeshes[0].mat;
-
-		if (!mat)
-			mat = m_Mesh->override_material();
-
-		m_device.bind_vertex_array(m_Mesh->mesh_vertex_array());
-		m_device.bind_shader_program(m_program);
-
-		if (mat)
-		{
-			Texture2D* albedo = mat->texture_albedo();
-
-			if (albedo)
-			{			
-				m_device.bind_sampler_state(m_cubemapSampler, ShaderType::FRAGMENT, 0);
-				m_device.bind_texture(albedo, ShaderType::FRAGMENT, 0);
-			}
-
-			Texture2D* normal = mat->texture_normal();
-
-			if (normal)
-			{
-				m_device.bind_sampler_state(m_cubemapSampler, ShaderType::FRAGMENT, 1);
-				m_device.bind_texture(normal, ShaderType::FRAGMENT, 1);
-			}
-				
-			Texture2D* metalness = mat->texture_metalness();
-
-			if (metalness)
-			{	
-				m_device.bind_sampler_state(m_cubemapSampler, ShaderType::FRAGMENT, 2);
-				m_device.bind_texture(metalness, ShaderType::FRAGMENT, 2);
-			}
-				
-			Texture2D* roughness = mat->texture_roughness();
-
-			if (roughness)
-			{
-				m_device.bind_sampler_state(m_cubemapSampler, ShaderType::FRAGMENT, 3);
-				m_device.bind_texture(roughness, ShaderType::FRAGMENT, 3);
-			}
-		}
-
-		m_device.bind_sampler_state(m_sampler, ShaderType::FRAGMENT, 4);
-		m_device.bind_texture(m_irradianceMap, ShaderType::FRAGMENT, 4);
-
-		m_device.bind_sampler_state(m_cubemapSampler, ShaderType::FRAGMENT, 5);
-		m_device.bind_texture(m_prefilteredMap, ShaderType::FRAGMENT, 5);
-
-		m_device.bind_sampler_state(m_sampler, ShaderType::FRAGMENT, 6);
-		m_device.bind_texture(m_brdfLUT, ShaderType::FRAGMENT, 6);
-
-		m_device.bind_uniform_buffer_range(m_per_entity_ubo, ShaderType::VERTEX, 1, 0, sizeof(PerEntityUniforms));
-		m_device.set_primitive_type(PrimitiveType::TRIANGLES);
-
-		for (uint32_t i = 0; i < m_Mesh->sub_mesh_count(); i++)
-		{
-			m_device.draw_indexed_base_vertex(submeshes[i].indexCount, submeshes[i].baseIndex, submeshes[i].baseVertex);
-		}
-
-		renderCubeMap();
-        
-  //      m_device.bind_framebuffer(nullptr);
-  //      m_device.set_viewport(m_width, m_height, 0, 0);
-
-  //      float clear[] = { 0.0f, 1.0f, 0.0f, 1.0f };
-  //      m_device.clear_framebuffer(ClearTarget::ALL, clear);
-
-  //      m_device.bind_shader_program(m_quadProgram);
-	
-  //      m_device.bind_sampler_state(m_cubemapSampler, ShaderType::FRAGMENT, 0);
-		//m_device.bind_texture(m_textureRT, ShaderType::FRAGMENT, 0);
-		////m_device.bind_texture(m_brdfLUT, ShaderType::FRAGMENT, 0);
-
-  //      m_device.set_primitive_type(PrimitiveType::TRIANGLE_STRIP);
-  //      m_device.bind_vertex_array(m_quadVAO);
-  //      m_device.draw(0, 4);
-//        
-        //ImGui::ShowTestWindow();
+		update_camera();
+		render_editor_gui();
+		ImGui::ShowDemoWindow();
+		m_renderer->render(m_camera);
     }
 
-	void renderCube()
-	{
-		m_device.bind_vertex_array(m_cubeVAO);
-		m_device.set_primitive_type(PrimitiveType::TRIANGLES);
-		m_device.draw(0, 36);
-	}
-
-	void renderSpheres()
-	{
-		// Update Uniforms
-
-		char* mem = (char*)m_device.map_buffer(m_per_entity_ubo, BufferMapType::WRITE);
-
-		if (mem)
-		{
-			for (uint32_t i = 0; i < NUM_ROWS; i++)
-			{
-				for (uint32_t j = 0; j < NUM_COLUMNS; j++)
-				{
-					uint32_t index = (i * NUM_COLUMNS) + j;
-					size_t offset = m_uboAlign * index;
-					memcpy(mem + offset, &m_sphereUniforms[index], sizeof(PerEntityUniforms));
-				}
-			}
-
-			m_device.unmap_buffer(m_per_entity_ubo);
-		}
-
-		m_device.bind_vertex_array(m_sphereVAO);
-		m_device.bind_shader_program(m_program);
-		m_device.bind_uniform_buffer(m_per_frame_ubo, ShaderType::VERTEX, 0);
-		m_device.bind_uniform_buffer(m_per_scene_ubo, ShaderType::FRAGMENT, 2);
-
-		m_device.bind_sampler_state(m_sampler, ShaderType::FRAGMENT, 0);
-		m_device.bind_texture(m_irradianceMap, ShaderType::FRAGMENT, 0);
-
-		m_device.bind_sampler_state(m_cubemapSampler, ShaderType::FRAGMENT, 1);
-		m_device.bind_texture(m_prefilteredMap, ShaderType::FRAGMENT, 1);
-
-		m_device.bind_sampler_state(m_sampler, ShaderType::FRAGMENT, 2);
-		m_device.bind_texture(m_brdfLUT, ShaderType::FRAGMENT, 2);
-
-		m_device.set_primitive_type(PrimitiveType::TRIANGLE_STRIP);
-		
-		for (uint32_t i = 0; i < NUM_ROWS; i++)
-		{
-			for (uint32_t j = 0; j < NUM_COLUMNS; j++)
-			{
-				m_device.bind_uniform_buffer_range(m_per_entity_ubo, ShaderType::VERTEX, 1, m_uboAlign * ((i * NUM_COLUMNS) + j), sizeof(PerEntityUniforms));
-				m_device.draw_indexed(m_sphereIndexCount);
-			}
-		}
-	}
-    
     void shutdown() override
     {
-		//dw::Material::Unload(m_Mat);
-		//dw::Mesh::Unload(m_Mesh);
-
-		m_device.destroy(m_brdfLUTFBO);
-		m_device.destroy(m_prefilteredMap);
-		m_device.destroy(m_envMap);
-		m_device.destroy(m_irradianceMap);
-		m_device.destroy(m_brdfLUT);
-        m_device.destroy(m_sampler);
-		m_device.destroy(m_cubemapSampler);
-        m_device.destroy(m_ds);
-        m_device.destroy(m_rs);
-        m_device.destroy(m_per_scene_ubo);
-        m_device.destroy(m_per_entity_ubo);
-        m_device.destroy(m_per_frame_ubo);
-		m_device.destroy(m_cubeMapUBO);
-		m_device.destroy(m_brdfIntegrateProgram);
-		m_device.destroy(m_brdfIntegrateFs);
-		m_device.destroy(m_cubeMapProgram);
-		m_device.destroy(m_cubeMapFs);
-		m_device.destroy(m_cubeMapVs);
-        m_device.destroy(m_quadProgram);
-        m_device.destroy(m_quadFs);
-        m_device.destroy(m_quadVs);
-        m_device.destroy(m_program);
-        m_device.destroy(m_fs);
-        m_device.destroy(m_vs);
-        delete m_quadLayout;
-		delete m_sphereIL;
-		delete m_cubeIL;
-        m_device.destroy(m_quadVAO);
-        m_device.destroy(m_quadVBO);
-		m_device.destroy(m_sphereVAO);
-		m_device.destroy(m_sphereIBO);
-		m_device.destroy(m_sphereVBO);
-		m_device.destroy(m_cubeVAO);
-		m_device.destroy(m_cubeVBO);
+		delete m_scene;
+		delete m_renderer;
+		delete m_camera;
     }
+
+	void render_editor_gui()
+	{
+		ImGuizmo::BeginFrame();
+
+		if (m_show_scene_window)
+		{
+			if (ImGui::Begin("Scene"))
+			{
+				dw::Entity* entities = m_scene->entities();
+
+				for (int i = 0; i < m_scene->entity_count(); i++)
+				{
+					if (ImGui::Selectable(entities[i].m_name.c_str(), m_selected_entity == entities[i].id))
+					{
+						m_selected_entity = entities[i].id;
+					}
+				}
+
+				if (ImGui::Button("New"))
+				{
+					dw::Entity e;
+					e.m_position = glm::vec3(0.0f, 0.0f, 0.0f);
+					e.m_rotation = glm::vec3(0.0f, 0.0f, 0.0f);
+					e.m_scale = glm::vec3(1.0f, 1.0f, 1.0f);
+					e.m_mesh = nullptr;
+					e.m_override_mat = nullptr;
+					e.m_transform = glm::mat4(1.0f);
+					e.m_program = nullptr;
+					e.m_name = "Empty";
+
+					m_scene->add_entity(e);
+				}
+
+				ImGui::SameLine();
+
+				if (m_selected_entity != USHRT_MAX)
+				{
+					if (ImGui::Button("Remove"))
+					{
+						m_scene->destroy_entity(m_selected_entity);
+						m_selected_entity = USHRT_MAX;
+					}
+				}
+
+				ImGui::End();
+			}
+
+			if (ImGui::Begin("Inspector"))
+			{
+				if (m_selected_entity != USHRT_MAX)
+				{
+					dw::Entity& entity = m_scene->lookup(m_selected_entity);
+					strcpy(&m_name_buffer[0], entity.m_name.c_str());
+					ImGui::InputText("Name", &m_name_buffer[0], 128);
+					entity.m_name = m_name_buffer;
+
+					ImGui::Separator();
+
+					edit_transform((float*)&m_camera->m_view, (float*)&m_camera->m_projection, &entity.m_position.x, &entity.m_rotation.x, &entity.m_scale.x, (float*)&entity.m_transform);
+
+					ImGui::Separator();
+
+					ImGui::Text("Material");
+
+					if (entity.m_override_mat)
+					{
+						ImGui::Text("Albedo");
+						dw::imageWithTexture(entity.m_override_mat->texture_albedo(), ImVec2(100, 100));
+						ImGui::Text("Normal");
+						dw::imageWithTexture(entity.m_override_mat->texture_normal(), ImVec2(100, 100));
+						ImGui::Text("Metalness");
+						dw::imageWithTexture(entity.m_override_mat->texture_metalness(), ImVec2(100, 100));
+						ImGui::Text("Roughness");
+						dw::imageWithTexture(entity.m_override_mat->texture_roughness(), ImVec2(100, 100));
+					}
+				}
+
+				ImGui::End();
+			}
+		}
+	}
     
     void key_pressed(int code) override
     {
@@ -1307,6 +256,9 @@ protected:
         
         if(code == GLFW_KEY_E)
             m_mouse_look = true;
+
+		if (code == GLFW_KEY_H)
+			m_show_scene_window = !m_show_scene_window;
     }
     
     void key_released(int code) override
@@ -1321,7 +273,7 @@ protected:
             m_mouse_look = false;
     }
     
-    void updateCamera()
+    void update_camera()
     {
         m_camera->set_translation_delta(m_camera->m_forward, m_heading_speed * m_delta);
         m_camera->set_translation_delta(m_camera->m_right, m_sideways_speed * m_delta);
@@ -1340,69 +292,67 @@ protected:
                                              (float)(0)));
         }
         
-        m_camera->update();
-
-		
+        m_camera->update();		
     }
-    
-    //void EditTransform(const float *cameraView, float *cameraProjection, float* matrix)
-    //{
-    //    static ImGuizmo::OPERATION mCurrentGizmoOperation(ImGuizmo::ROTATE);
-    //    static ImGuizmo::MODE mCurrentGizmoMode(ImGuizmo::WORLD);
-    //    static bool useSnap = false;
-    //    static float snap[3] = { 1.f, 1.f, 1.f };
-    //    
-    //    if (ImGui::IsKeyPressed(90))
-    //        mCurrentGizmoOperation = ImGuizmo::TRANSLATE;
-    //    if (ImGui::IsKeyPressed(69))
-    //        mCurrentGizmoOperation = ImGuizmo::ROTATE;
-    //    if (ImGui::IsKeyPressed(82)) // r Key
-    //        mCurrentGizmoOperation = ImGuizmo::SCALE;
-    //    if (ImGui::RadioButton("Translate", mCurrentGizmoOperation == ImGuizmo::TRANSLATE))
-    //        mCurrentGizmoOperation = ImGuizmo::TRANSLATE;
-    //    ImGui::SameLine();
-    //    if (ImGui::RadioButton("Rotate", mCurrentGizmoOperation == ImGuizmo::ROTATE))
-    //        mCurrentGizmoOperation = ImGuizmo::ROTATE;
-    //    ImGui::SameLine();
-    //    if (ImGui::RadioButton("Scale", mCurrentGizmoOperation == ImGuizmo::SCALE))
-    //        mCurrentGizmoOperation = ImGuizmo::SCALE;
-    //    
-    //    ImGui::InputFloat3("Tr", &m_cube_position.x, 3);
-    //    ImGui::InputFloat3("Rt", &m_cube_rotation.x, 3);
-    //    ImGui::InputFloat3("Sc", &m_cube_scale.x, 3);
-    //    ImGuizmo::RecomposeMatrixFromComponents(&m_cube_position.x, &m_cube_rotation.x, &m_cube_scale.x, matrix);
-    //    
-    //    if (mCurrentGizmoOperation != ImGuizmo::SCALE)
-    //    {
-    //        if (ImGui::RadioButton("Local", mCurrentGizmoMode == ImGuizmo::LOCAL))
-    //            mCurrentGizmoMode = ImGuizmo::LOCAL;
-    //        ImGui::SameLine();
-    //        if (ImGui::RadioButton("World", mCurrentGizmoMode == ImGuizmo::WORLD))
-    //            mCurrentGizmoMode = ImGuizmo::WORLD;
-    //    }
-    //    if (ImGui::IsKeyPressed(83))
-    //        useSnap = !useSnap;
-    //    ImGui::Checkbox("", &useSnap);
-    //    ImGui::SameLine();
-    //    
-    //    switch (mCurrentGizmoOperation)
-    //    {
-    //        case ImGuizmo::TRANSLATE:
-    //            ImGui::InputFloat3("Snap", &snap[0]);
-    //            break;
-    //        case ImGuizmo::ROTATE:
-    //            ImGui::InputFloat("Angle Snap", &snap[0]);
-    //            break;
-    //        case ImGuizmo::SCALE:
-    //            ImGui::InputFloat("Scale Snap", &snap[0]);
-    //            break;
-    //    }
-    //    ImGuiIO& io = ImGui::GetIO();
-    //    ImGuizmo::SetRect(0, 0, io.DisplaySize.x, io.DisplaySize.y);
-    //    ImGuizmo::Manipulate(cameraView, cameraProjection, mCurrentGizmoOperation, mCurrentGizmoMode, matrix, NULL, useSnap ? &snap[0] : NULL);
-    //    
-    //    ImGuizmo::DecomposeMatrixToComponents(matrix, &m_cube_position.x, &m_cube_rotation.x, &m_cube_scale.x);
-    //}
+
+	void edit_transform(const float* cameraView, float* cameraProjection, float* position, float* rotation, float* scale, float* matrix)
+	{
+	    static ImGuizmo::OPERATION mCurrentGizmoOperation(ImGuizmo::TRANSLATE);
+	    static ImGuizmo::MODE mCurrentGizmoMode(ImGuizmo::WORLD);
+	    static bool useSnap = false;
+	    static float snap[3] = { 1.f, 1.f, 1.f };
+
+	    //if (ImGui::IsKeyPressed(90))
+	    //    mCurrentGizmoOperation = ImGuizmo::TRANSLATE;
+	    //if (ImGui::IsKeyPressed(69))
+	    //    mCurrentGizmoOperation = ImGuizmo::ROTATE;
+	    //if (ImGui::IsKeyPressed(82)) // r Key
+	    //    mCurrentGizmoOperation = ImGuizmo::SCALE;
+	    if (ImGui::RadioButton("Translate", mCurrentGizmoOperation == ImGuizmo::TRANSLATE))
+	        mCurrentGizmoOperation = ImGuizmo::TRANSLATE;
+	    ImGui::SameLine();
+	    if (ImGui::RadioButton("Rotate", mCurrentGizmoOperation == ImGuizmo::ROTATE))
+	        mCurrentGizmoOperation = ImGuizmo::ROTATE;
+	    ImGui::SameLine();
+	    if (ImGui::RadioButton("Scale", mCurrentGizmoOperation == ImGuizmo::SCALE))
+	        mCurrentGizmoOperation = ImGuizmo::SCALE;
+	    
+	    ImGui::InputFloat3("Tr", position, 3);
+	    ImGui::InputFloat3("Rt", rotation, 3);
+	    ImGui::InputFloat3("Sc", scale, 3);
+	    ImGuizmo::RecomposeMatrixFromComponents(position, rotation, scale, matrix);
+	    
+	    if (mCurrentGizmoOperation != ImGuizmo::SCALE)
+	    {
+	        if (ImGui::RadioButton("Local", mCurrentGizmoMode == ImGuizmo::LOCAL))
+	            mCurrentGizmoMode = ImGuizmo::LOCAL;
+	        ImGui::SameLine();
+	        if (ImGui::RadioButton("World", mCurrentGizmoMode == ImGuizmo::WORLD))
+	            mCurrentGizmoMode = ImGuizmo::WORLD;
+	    }
+	    //if (ImGui::IsKeyPressed(83))
+	    //    useSnap = !useSnap;
+	    ImGui::Checkbox("", &useSnap);
+	    ImGui::SameLine();
+	    
+	    switch (mCurrentGizmoOperation)
+	    {
+	        case ImGuizmo::TRANSLATE:
+	            ImGui::InputFloat3("Snap", &snap[0]);
+	            break;
+	        case ImGuizmo::ROTATE:
+	            ImGui::InputFloat("Angle Snap", &snap[0]);
+	            break;
+	        case ImGuizmo::SCALE:
+	            ImGui::InputFloat("Scale Snap", &snap[0]);
+	            break;
+	    }
+	    ImGuiIO& io = ImGui::GetIO();
+	    ImGuizmo::SetRect(0, 0, io.DisplaySize.x, io.DisplaySize.y);
+	    ImGuizmo::Manipulate(cameraView, cameraProjection, mCurrentGizmoOperation, mCurrentGizmoMode, matrix, NULL, useSnap ? &snap[0] : NULL);
+	    
+	    ImGuizmo::DecomposeMatrixToComponents(matrix, position, rotation, scale);
+	}
 };
 
 DW_DECLARE_MAIN(Demo)
