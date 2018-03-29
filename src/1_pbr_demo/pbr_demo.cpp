@@ -177,7 +177,6 @@ protected:
     {
 		update_camera();
 		render_editor_gui();
-		ImGui::ShowDemoWindow();
 		m_renderer->render(m_camera, m_last_dock_size.x, m_last_dock_size.y, m_offscreen_fbo);
 		m_device.bind_framebuffer(nullptr);
     }
@@ -249,7 +248,7 @@ protected:
 
 	void render_editor_gui()
 	{
-		ImGuizmo::BeginFrame();
+		ImGuizmo::BeginFrame(m_last_dock_pos, m_last_dock_size);
 
 		int dock_flags = ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoCollapse;
 
@@ -264,14 +263,18 @@ protected:
 			ImGui::SetNextDock("Editor", ImGuiDockSlot_Bottom);
 			if (ImGui::BeginDock("Asset Browser")) 
 			{
-				ImGui::Text("I'm LonelyWaiting!");
+				print_dir(m_root_entry);
 			}
 			ImGui::EndDock();
-
+#define VIEWPORT_PADDING 5
 			ImGui::SetNextDock("Editor", ImGuiDockSlot_Top);
 			if (ImGui::BeginDock("Viewport")) 
 			{
+				ImVec2 window_padding = ImGui::GetStyle().WindowPadding;
+				ImVec2 frame_padding = ImGui::GetStyle().FramePadding;
 				ImVec2 current = ImGui::GetWindowSize();
+				current.x -= (window_padding.x + frame_padding.x);
+				current.y -= (window_padding.y + frame_padding.y + VIEWPORT_PADDING);
 
 				if (ImGui::IsMouseDragging())
 				{
@@ -291,6 +294,8 @@ protected:
 				ImGuizmo::SetDrawlist();
 				m_last_dock_size = current;
 				m_last_dock_pos = ImGui::GetWindowPos();
+				m_last_dock_pos.x += window_padding.x;
+
 				if (m_color_rt)
 					dw::imageWithTexture(m_color_rt, m_last_dock_size);
 			}
@@ -304,70 +309,6 @@ protected:
 
 			ImGui::SetNextDock("Editor", ImGuiDockSlot_Left);
 			if (ImGui::BeginDock("Inspector")) {
-				ImGui::Text("Who's your daddy?");
-			}
-			ImGui::EndDock();
-
-			ImGui::SetNextDock("Editor", ImGuiDockSlot_Right);
-			if (ImGui::BeginDock("Heirarchy")) {
-				ImGui::Text("Who's your daddy?");
-			}
-			ImGui::EndDock();
-
-			ImGui::EndDockspace();
-		}
-		ImGui::End();
-
-		if (m_show_scene_window)
-		{
-			if (ImGui::Begin("Assets"))
-			{
-				print_dir(m_root_entry);
-			}
-			ImGui::End();
-
-			if (ImGui::Begin("Scene"))
-			{
-				dw::Entity* entities = m_scene->entities();
-
-				for (int i = 0; i < m_scene->entity_count(); i++)
-				{
-					if (ImGui::Selectable(entities[i].m_name.c_str(), m_selected_entity == entities[i].id))
-					{
-						m_selected_entity = entities[i].id;
-					}
-				}
-
-				if (ImGui::Button("New"))
-				{
-					dw::Entity e;
-					e.m_position = glm::vec3(0.0f, 0.0f, 0.0f);
-					e.m_rotation = glm::vec3(0.0f, 0.0f, 0.0f);
-					e.m_scale = glm::vec3(1.0f, 1.0f, 1.0f);
-					e.m_mesh = nullptr;
-					e.m_override_mat = nullptr;
-					e.m_transform = glm::mat4(1.0f);
-					e.m_program = nullptr;
-					e.m_name = "Empty";
-
-					m_scene->add_entity(e);
-				}
-
-				ImGui::SameLine();
-
-				if (m_selected_entity != USHRT_MAX)
-				{
-					if (ImGui::Button("Remove"))
-					{
-						m_scene->destroy_entity(m_selected_entity);
-						m_selected_entity = USHRT_MAX;
-					}
-				}
-			}
-			ImGui::End();
-
-			if (ImGui::Begin("Inspector"))
-			{
 				if (m_selected_entity != USHRT_MAX)
 				{
 					dw::Entity& entity = m_scene->lookup(m_selected_entity);
@@ -427,8 +368,51 @@ protected:
 					}
 				}
 			}
-			ImGui::End();
+			ImGui::EndDock();
+
+			ImGui::SetNextDock("Editor", ImGuiDockSlot_Right);
+			if (ImGui::BeginDock("Heirarchy")) {
+				dw::Entity* entities = m_scene->entities();
+
+				for (int i = 0; i < m_scene->entity_count(); i++)
+				{
+					if (ImGui::Selectable(entities[i].m_name.c_str(), m_selected_entity == entities[i].id))
+					{
+						m_selected_entity = entities[i].id;
+					}
+				}
+
+				if (ImGui::Button("New"))
+				{
+					dw::Entity e;
+					e.m_position = glm::vec3(0.0f, 0.0f, 0.0f);
+					e.m_rotation = glm::vec3(0.0f, 0.0f, 0.0f);
+					e.m_scale = glm::vec3(1.0f, 1.0f, 1.0f);
+					e.m_mesh = nullptr;
+					e.m_override_mat = nullptr;
+					e.m_transform = glm::mat4(1.0f);
+					e.m_program = nullptr;
+					e.m_name = "Empty";
+
+					m_scene->add_entity(e);
+				}
+
+				ImGui::SameLine();
+
+				if (m_selected_entity != USHRT_MAX)
+				{
+					if (ImGui::Button("Remove"))
+					{
+						m_scene->destroy_entity(m_selected_entity);
+						m_selected_entity = USHRT_MAX;
+					}
+				}
+			}
+			ImGui::EndDock();
+
+			ImGui::EndDockspace();
 		}
+		ImGui::End();
 	}
     
     void key_pressed(int code) override
