@@ -17,6 +17,7 @@
 #include <vector>
 
 #include <Macros.h>
+#include <imgui_dock.h>
 
 #define CAMERA_SPEED 0.05f
 #define CAMERA_SENSITIVITY 0.02f
@@ -484,8 +485,9 @@ private:
     float m_heading_speed = 0.0f;
     float m_sideways_speed = 0.0f;
     bool m_mouse_look = false;
+	bool m_dock_changed = true;
+	ImVec2 m_last_dock_size;
     dd::Renderer m_debug_renderer;
-    
     glm::vec3 m_min_extents;
     glm::vec3 m_max_extents;
     glm::vec3 m_pos;
@@ -494,20 +496,36 @@ private:
 	float m_grid_spacing;
 	float m_grid_y;
 	DirectoryEntry m_root_entry;
+	std::string m_selected_file;
 	glm::mat4 m_model;
 
 public:
-	void print_dir(DirectoryEntry& dir, std::string tab)
+	void print_dir(DirectoryEntry& dir)
 	{
 		for (int i = 0; i < dir.directories.size(); i++)
 		{
-			std::cout << tab << dir.directories[i].name << std::endl;
-			print_dir(dir.directories[i], tab + "\t");
+			if (ImGui::TreeNode(dir.directories[i].name.c_str()))
+			{
+				print_dir(dir.directories[i]);
+				ImGui::TreePop();
+			}	
 		}
 
 		for (int i = 0; i < dir.files.size(); i++)
 		{
-			std::cout << tab << dir.files[i] << std::endl;
+			ImGuiTreeNodeFlags node_flags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_OpenOnDoubleClick | ((m_selected_file == dir.files[i]) ? ImGuiTreeNodeFlags_Selected : 0) | ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
+			ImGui::TreeNodeEx(dir.files[i].c_str(), node_flags);
+
+			if (ImGui::IsItemClicked())
+				m_selected_file = dir.files[i];
+
+			if (ImGui::BeginDragDropSource())
+			{
+				ImGui::BeginTooltip();
+				ImGui::Text(m_selected_file.c_str());
+				ImGui::EndTooltip();
+				ImGui::EndDragDropSource();
+			}
 		}
 	}
 
@@ -530,10 +548,74 @@ public:
 
 		find_assets("C:/Users/Dihara/Documents/Terminus Research", m_root_entry);
 
-		print_dir(m_root_entry, "");
+		ImGui::InitDock();
 
         return m_debug_renderer.init(&m_device);
     }
+
+	void dock_test()
+	{
+		int dock_flags = ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoCollapse;
+
+		ImGui::SetNextWindowPos(ImVec2(0, 0));
+		ImGui::SetNextWindowSize(ImVec2(m_width, m_height));
+		if (ImGui::Begin("Dock Demo", (bool*)0, dock_flags))
+		{
+			// dock layout by hard-coded or .ini file
+			ImGui::BeginDockspace();
+
+			ImGui::SetNextDock("Dock Demo", ImGuiDockSlot_Bottom);
+			if (ImGui::BeginDock("Asset Browser")) {
+				ImGui::Text("I'm LonelyWaiting!");
+				ImVec2 current = ImGui::GetWindowSize();
+				ImGui::Text("x:%f, y:%f", current.x, current.y);
+				
+				if (ImGui::IsMouseDragging())
+				{
+					if (current.x != m_last_dock_size.x || current.y != m_last_dock_size.y)
+						m_dock_changed = true;
+				}
+				else
+				{
+					if (m_dock_changed)
+					{
+						m_dock_changed = false;
+						std::cout << "Dock Changed" << std::endl;
+					}
+				}
+
+				m_last_dock_size = current;
+			}
+			ImGui::EndDock();
+
+			ImGui::SetNextDock("Dock Demo", ImGuiDockSlot_Top);
+			if (ImGui::BeginDock("Viewport")) {
+				ImGui::Text("I'm Wubugui!");
+			}
+			ImGui::EndDock();
+
+			ImGui::SetNextDock("Dock Demo", ImGuiDockSlot_Tab);
+			if (ImGui::BeginDock("Material Editor")) {
+				ImGui::Text("I'm BentleyBlanks!");
+			}
+			ImGui::EndDock();
+
+			ImGui::SetNextDock("Dock Demo", ImGuiDockSlot_Left);
+			if (ImGui::BeginDock("Inspector")) {
+				ImGui::Text("Who's your daddy?");
+			}
+			ImGui::EndDock();
+
+			ImGui::SetNextDock("Dock Demo", ImGuiDockSlot_Right);
+			if (ImGui::BeginDock("Heirarchy")) {
+				ImGui::Text("Who's your daddy?");
+			}
+			ImGui::EndDock();
+
+			ImGui::EndDockspace();
+		}
+		ImGui::End();
+	}
     
     void update(double delta) override
     {
@@ -544,6 +626,8 @@ public:
         
         float clear[] = { 0.3f, 0.3f, 0.3f, 1.0f };
         m_device.clear_framebuffer(ClearTarget::ALL, clear);
+
+		dock_test();
         
         ImGui::Begin("Debug Draw");
         
@@ -558,6 +642,7 @@ public:
         ImGui::End();
 
 		ImGui::ShowDemoWindow();
+		print_dir(m_root_entry);
         
         m_debug_renderer.capsule(20.0f, 5.0f, glm::vec3(-20.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0));
         m_debug_renderer.grid(101.0f, 101.0f, m_grid_y, m_grid_spacing, glm::vec3(1.0f));
