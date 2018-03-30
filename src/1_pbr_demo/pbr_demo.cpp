@@ -22,6 +22,7 @@
 #define CAMERA_SENSITIVITY 0.02f
 #define CAMERA_ROLL 0.0
 #define TEXTURE_TYPE "TextureType"
+#define VIEWPORT_PADDING 5
 
 const char* kMeshAssets[] = 
 {
@@ -266,7 +267,7 @@ protected:
 				print_dir(m_root_entry);
 			}
 			ImGui::EndDock();
-#define VIEWPORT_PADDING 5
+
 			ImGui::SetNextDock("Editor", ImGuiDockSlot_Top);
 			if (ImGui::BeginDock("Viewport")) 
 			{
@@ -275,7 +276,7 @@ protected:
 				ImVec2 current = ImGui::GetWindowSize();
 				current.x -= (window_padding.x + frame_padding.x);
 				current.y -= (window_padding.y + frame_padding.y + VIEWPORT_PADDING);
-
+				std::cout << "current:" << current.x << ", " << current.y << std::endl;
 				if (ImGui::IsMouseDragging())
 				{
 					if (current.x != m_last_dock_size.x || current.y != m_last_dock_size.y)
@@ -288,6 +289,13 @@ protected:
 						m_dock_changed = false;
 						m_last_dock_size = current;
 						rebuild_framebuffer();
+					}
+					else if (!ImGui::IsAnyMouseDown() && (current.x != m_last_dock_size.x || current.y != m_last_dock_size.y))
+					{
+						// @TODO: Fix framebuffer recreation upon moving when viewport dock is floating.
+						m_last_dock_size = current;
+						rebuild_framebuffer();
+						std::cout << "m_last_dock_size:" << m_last_dock_size.x << ", " << m_last_dock_size.y << std::endl;
 					}
 				}
 
