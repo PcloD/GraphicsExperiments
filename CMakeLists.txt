@@ -13,7 +13,8 @@ set(GLFW_INCLUDE_DIRS "${PROJECT_SOURCE_DIR}/external/dwSampleFramework/external
 set(GLM_INCLUDE_DIRS "${PROJECT_SOURCE_DIR}/external/dwSampleFramework/external/glm/glm")
 set(STB_INCLUDE_DIRS "${PROJECT_SOURCE_DIR}/external/dwSampleFramework/external/stb")
 set(IMGUI_INCLUDE_DIRS "${PROJECT_SOURCE_DIR}/external/dwSampleFramework/external/imgui")
-set(JSON_INCLUDE_DIRS "${PROJECT_SOURCE_DIR}/external/dwSampleFramework/external/json/src")
+set(JSON_INCLUDE_DIRS "${PROJECT_SOURCE_DIR}/external/dwSampleFramework/external/json/single_include/nlohmann")
+set(NFD_INCLUDE_DIRS "${PROJECT_SOURCE_DIR}/external/nfd/include")
 
 include_directories("${DWSFW_INCLUDE_DIRS}"
                     "${GFX_INCLUDE_DIRS}"
@@ -25,6 +26,7 @@ include_directories("${DWSFW_INCLUDE_DIRS}"
                     "${GLFW_INCLUDE_DIRS}")
 
 add_subdirectory(external/dwSampleFramework)
+add_subdirectory(external/nfd)
 
 # Experiments
 add_subdirectory(src/1_pbr_demo)

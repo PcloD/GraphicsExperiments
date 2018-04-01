@@ -504,7 +504,20 @@ public:
 	{
 		for (int i = 0; i < dir.directories.size(); i++)
 		{
-			if (ImGui::TreeNode(dir.directories[i].name.c_str()))
+			bool open = ImGui::TreeNode(dir.directories[i].name.c_str());
+
+			static float value = 0.5f;
+			if (ImGui::BeginPopupContextItem("item context menu"))
+			{
+				if (ImGui::Selectable("Set to zero")) value = 0.0f;
+				if (ImGui::Selectable("Set to PI")) value = 3.1415f;
+				ImGui::PushItemWidth(-1);
+				ImGui::DragFloat("##Value", &value, 0.1f, 0.0f, 0.0f);
+				ImGui::PopItemWidth();
+				ImGui::EndPopup();
+			}
+
+			if (open)
 			{
 				print_dir(dir.directories[i]);
 				ImGui::TreePop();
@@ -529,7 +542,7 @@ public:
 		}
 	}
 
-    bool init() override
+    bool init(int argc, const char* argv[]) override
     {
         m_camera = new Camera(45.0f,
                               0.1f,
@@ -630,7 +643,7 @@ public:
 		dock_test();
         
         ImGui::Begin("Debug Draw");
-        
+		
         ImGui::InputFloat3("Min Extents", &m_min_extents[0]);
         ImGui::InputFloat3("Max Extents", &m_max_extents[0]);
         ImGui::InputFloat3("Position", &m_pos[0]);
@@ -642,6 +655,7 @@ public:
         ImGui::End();
 
 		ImGui::ShowDemoWindow();
+
 		print_dir(m_root_entry);
         
         m_debug_renderer.capsule(20.0f, 5.0f, glm::vec3(-20.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0));

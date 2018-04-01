@@ -17,6 +17,9 @@
 #include <ImGuizmo.h>
 #include <imgui_helpers.h>
 #include <imgui_dock.h>
+#include <json.hpp>
+#include <nfd.h>
+#include "project.h"
 
 #define CAMERA_SPEED 0.01f
 #define CAMERA_SENSITIVITY 0.02f
@@ -91,6 +94,15 @@ void find_assets(const std::string& name, DirectoryEntry& root_entry)
 	}
 }
 
+struct EditorState
+{
+	bool show_asset_browser;
+	bool show_inspector;
+	bool show_heirarchy;
+	bool show_viewport;
+	bool show_material_editor;
+};
+
 class Demo : public dw::Application
 {
 private:
@@ -105,46 +117,75 @@ private:
 	char m_name_buffer[128];
 	std::string m_selected_file;
 	DirectoryEntry m_root_entry;
+	DirectoryEntry* m_selected_dir;
 	bool m_dock_changed = true;
 	ImVec2 m_last_dock_size;
 	ImVec2 m_last_dock_pos;
 	Framebuffer* m_offscreen_fbo;
 	Texture2D*   m_color_rt;
 	Texture2D*   m_depth_rt;
+	Project*	 m_current_project;
+	EditorState m_editor_state;
+	char* m_string_buffer;
 
 protected:
 	void print_dir(DirectoryEntry& dir)
 	{
 		for (int i = 0; i < dir.directories.size(); i++)
 		{
-			if (ImGui::TreeNode(dir.directories[i].name.c_str()))
+			DirectoryEntry* entry = &dir.directories[i];
+
+			ImGuiTreeNodeFlags node_flags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_OpenOnDoubleClick | ((m_selected_dir == entry) ? ImGuiTreeNodeFlags_Selected : 0);
+			
+			bool open = ImGui::TreeNodeEx(dir.directories[i].name.c_str(), node_flags);
+
+			if (ImGui::IsItemClicked())
+				m_selected_dir = entry;
+
+			if (open)
 			{
 				print_dir(dir.directories[i]);
 				ImGui::TreePop();
 			}
 		}
+	}
 
-		for (int i = 0; i < dir.files.size(); i++)
+	void print_files()
+	{
+		if (ImGui::Button("Import Asset"))
 		{
-			ImGuiTreeNodeFlags node_flags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_OpenOnDoubleClick | ((m_selected_file == dir.files[i]) ? ImGuiTreeNodeFlags_Selected : 0) | ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
-			ImGui::TreeNodeEx(dir.files[i].c_str(), node_flags);
 
-			if (ImGui::IsItemClicked())
-				m_selected_file = dir.files[i];
+		}
+		ImGui::SameLine();
+		if (ImGui::Button("New..."))
+		{
 
-			if (ImGui::BeginDragDropSource())
+		}
+
+		if (m_selected_dir)
+		{
+			for (int i = 0; i < m_selected_dir->files.size(); i++)
 			{
-				ImGui::SetDragDropPayload(TEXTURE_TYPE, m_selected_file.c_str(), m_selected_file.length());
+				ImGuiTreeNodeFlags node_flags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_OpenOnDoubleClick | ((m_selected_file == m_selected_dir->files[i]) ? ImGuiTreeNodeFlags_Selected : 0) | ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
+				ImGui::TreeNodeEx(m_selected_dir->files[i].c_str(), node_flags);
 
-				ImGui::BeginTooltip();
-				ImGui::Text(m_selected_file.c_str());
-				ImGui::EndTooltip();
-				ImGui::EndDragDropSource();
+				if (ImGui::IsItemClicked())
+					m_selected_file = m_selected_dir->files[i];
+
+				if (ImGui::BeginDragDropSource())
+				{
+					ImGui::SetDragDropPayload(TEXTURE_TYPE, m_selected_file.c_str(), m_selected_file.length());
+
+					ImGui::BeginTooltip();
+					ImGui::Text(m_selected_file.c_str());
+					ImGui::EndTooltip();
+					ImGui::EndDragDropSource();
+				}
 			}
 		}
 	}
 
-    bool init() override
+    bool init(int argc, const char* argv[]) override
     {
         m_camera = new Camera(45.0f,
                             0.1f,
@@ -154,22 +195,23 @@ protected:
                             glm::vec3(0.0f, 0.0f, -1.0f));
         
 		m_renderer = new dw::Renderer(&m_device, m_width, m_height);
-		m_scene = dw::Scene::load("scene.json", &m_device, m_renderer);
 
-		if (!m_scene) 
-		{
-			LOG_ERROR("Failed to load scene!");
-			return false;
-		}
-
-		m_renderer->set_scene(m_scene);
-		find_assets("F:/Projects/GraphicsExperiments/build/src/1_pbr_demo/texture", m_root_entry);
+		if (argc > 1)
+			open_project(argv[1]);
 
 		ImGui::InitDock();
 
 		m_offscreen_fbo = nullptr;
 		m_color_rt = nullptr;
 		m_depth_rt = nullptr;
+		m_scene = nullptr;
+		m_selected_dir = nullptr;
+
+		m_editor_state.show_asset_browser = true;
+		m_editor_state.show_inspector = true;
+		m_editor_state.show_heirarchy = true;
+		m_editor_state.show_viewport = true;
+		m_editor_state.show_material_editor = true;
 
         return true;
     }
@@ -178,7 +220,8 @@ protected:
     {
 		update_camera();
 		render_editor_gui();
-		m_renderer->render(m_camera, m_last_dock_size.x, m_last_dock_size.y, m_offscreen_fbo);
+		if (m_scene)
+			m_renderer->render(m_camera, m_last_dock_size.x, m_last_dock_size.y, m_offscreen_fbo);
 		m_device.bind_framebuffer(nullptr);
     }
 
@@ -192,6 +235,74 @@ protected:
 		delete m_renderer;
 		delete m_camera;
     }
+
+	bool open_project(std::string path)
+	{
+#ifdef WIN32
+		std::replace(path.begin(), path.end(), '\\', '/');
+#endif
+		std::string projectJson;
+
+		if (!Utility::ReadText(path, projectJson))
+			return false;
+
+		nlohmann::json json = nlohmann::json::parse(projectJson.c_str());
+
+		m_current_project = new Project();
+		std::string name = json["name"];
+		m_current_project->name = name;
+		std::size_t found = path.find_last_of("/\\");
+		m_current_project->project_directory = path.substr(0, found);
+
+		Utility::change_current_working_directory(m_current_project->project_directory);
+
+		auto platforms = json["platforms"];
+
+		for (auto& platform : platforms)
+		{
+			std::string platformStr = platform;
+			m_current_project->platforms.push_back(platformStr);
+		}
+
+		find_assets(m_current_project->project_directory + "/assets", m_root_entry);
+
+		return true;
+	}
+
+	void close_project()
+	{
+		if (m_current_project)
+		{
+			delete m_current_project;
+			m_current_project = nullptr;
+
+			m_root_entry.name.clear();
+			m_root_entry.full_path.clear();
+			m_root_entry.files.clear();
+			m_root_entry.directories.clear();
+		}
+	}
+
+	bool open_scene(std::string path)
+	{
+		m_scene = dw::Scene::load(path, &m_device, m_renderer);
+
+		if (!m_scene)
+			return false;
+
+		m_renderer->set_scene(m_scene);
+		return true;
+	}
+
+	void close_scene()
+	{
+		if (m_scene)
+		{
+			delete m_scene;
+			m_scene = nullptr;
+			m_renderer->set_scene(nullptr);
+		}
+	}
 
 	void rebuild_framebuffer()
 	{
@@ -251,32 +362,104 @@ protected:
 	{
 		ImGuizmo::BeginFrame(m_last_dock_pos, m_last_dock_size);
 
-		int dock_flags = ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoCollapse;
+		int dock_flags = ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_MenuBar;
 
 		ImGui::SetNextWindowPos(ImVec2(0, 0));
 		ImGui::SetNextWindowSize(ImVec2(m_width, m_height));
+		
+		ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
 
 		if (ImGui::Begin("Editor", (bool*)0, dock_flags))
 		{
+			if (ImGui::BeginMenuBar())
+			{
+				if (ImGui::BeginMenu("File"))
+				{
+					if (ImGui::MenuItem("Open Project..."))
+					{
+						nfdresult_t res = NFD_OpenDialog("tproj", nullptr, &m_string_buffer);
+
+						if (res != NFD_CANCEL)
+						{
+							std::string path = m_string_buffer;
+							free(m_string_buffer);
+
+							if (res == NFD_ERROR)
+							{
+								LOG_ERROR("Failed to open project");
+							}
+							else if (res == NFD_OKAY)
+								open_project(path);
+						}
+					}
+					if (ImGui::MenuItem("Close Project"))
+					{
+						close_project();
+					}
+					if (ImGui::MenuItem("Open Scene..."))
+					{
+						nfdresult_t res = NFD_OpenDialog("json", nullptr, &m_string_buffer);
+
+						if (res != NFD_CANCEL)
+						{
+							std::string path = m_string_buffer;
+							free(m_string_buffer);
+
+							if (res == NFD_ERROR)
+							{
+								LOG_ERROR("Failed to open project");
+							}
+							else if (res == NFD_OKAY)
+								open_scene(path);
+						}
+					}
+					ImGui::EndMenu();
+				}
+				if (ImGui::BeginMenu("Edit"))
+				{
+					ImGui::EndMenu();
+				}
+				if (ImGui::BeginMenu("View"))
+				{
+					ImGui::MenuItem("Asset Browser", NULL, &m_editor_state.show_asset_browser);
+					ImGui::MenuItem("Inspector", NULL, &m_editor_state.show_inspector);
+					ImGui::MenuItem("Heirarchy", NULL, &m_editor_state.show_heirarchy);
+					ImGui::MenuItem("Viewport", NULL, &m_editor_state.show_viewport);
+					ImGui::MenuItem("Material Editor", NULL, &m_editor_state.show_material_editor);
+					ImGui::EndMenu();
+				}
+				ImGui::EndMenuBar();
+			}
+
+			ImGui::Button("Translate");
+			ImGui::SameLine();
+			ImGui::Button("Rotate");
+			ImGui::SameLine();
+			ImGui::Button("Scale");
+
 			// dock layout by hard-coded or .ini file
 			ImGui::BeginDockspace();
 
 			ImGui::SetNextDock("Editor", ImGuiDockSlot_Bottom);
-			if (ImGui::BeginDock("Asset Browser")) 
+			if (ImGui::BeginDock("Asset Browser", &m_editor_state.show_asset_browser))
 			{
+				ImGui::Columns(2);
+				ImGui::SetColumnWidth(0, 200.0f);
 				print_dir(m_root_entry);
+				ImGui::NextColumn();
+				print_files();
 			}
 			ImGui::EndDock();
 
 			ImGui::SetNextDock("Editor", ImGuiDockSlot_Top);
-			if (ImGui::BeginDock("Viewport")) 
+			if (ImGui::BeginDock("Viewport", &m_editor_state.show_viewport))
 			{
 				ImVec2 window_padding = ImGui::GetStyle().WindowPadding;
 				ImVec2 frame_padding = ImGui::GetStyle().FramePadding;
 				ImVec2 current = ImGui::GetWindowSize();
 				current.x -= (window_padding.x + frame_padding.x);
 				current.y -= (window_padding.y + frame_padding.y + VIEWPORT_PADDING);
-				std::cout << "current:" << current.x << ", " << current.y << std::endl;
+				//std::cout << "current:" << current.x << ", " << current.y << std::endl;
 				if (ImGui::IsMouseDragging())
 				{
 					if (current.x != m_last_dock_size.x || current.y != m_last_dock_size.y)
@@ -310,13 +493,13 @@ protected:
 			ImGui::EndDock();
 
 			ImGui::SetNextDock("Editor", ImGuiDockSlot_Tab);
-			if (ImGui::BeginDock("Material Editor")) {
+			if (ImGui::BeginDock("Material Editor", &m_editor_state.show_material_editor)) {
 				ImGui::Text("I'm BentleyBlanks!");
 			}
 			ImGui::EndDock();
 
 			ImGui::SetNextDock("Editor", ImGuiDockSlot_Left);
-			if (ImGui::BeginDock("Inspector")) {
+			if (ImGui::BeginDock("Inspector", &m_editor_state.show_inspector)) {
 				if (m_selected_entity != USHRT_MAX)
 				{
 					dw::Entity& entity = m_scene->lookup(m_selected_entity);
@@ -379,40 +562,43 @@ protected:
 			ImGui::EndDock();
 
 			ImGui::SetNextDock("Editor", ImGuiDockSlot_Right);
-			if (ImGui::BeginDock("Heirarchy")) {
-				dw::Entity* entities = m_scene->entities();
-
-				for (int i = 0; i < m_scene->entity_count(); i++)
+			if (ImGui::BeginDock("Heirarchy", &m_editor_state.show_heirarchy)) {
+				if (m_scene)
 				{
-					if (ImGui::Selectable(entities[i].m_name.c_str(), m_selected_entity == entities[i].id))
+					dw::Entity* entities = m_scene->entities();
+
+					for (int i = 0; i < m_scene->entity_count(); i++)
 					{
-						m_selected_entity = entities[i].id;
+						if (ImGui::Selectable(entities[i].m_name.c_str(), m_selected_entity == entities[i].id))
+						{
+							m_selected_entity = entities[i].id;
+						}
 					}
-				}
 
-				if (ImGui::Button("New"))
-				{
-					dw::Entity e;
-					e.m_position = glm::vec3(0.0f, 0.0f, 0.0f);
-					e.m_rotation = glm::vec3(0.0f, 0.0f, 0.0f);
-					e.m_scale = glm::vec3(1.0f, 1.0f, 1.0f);
-					e.m_mesh = nullptr;
-					e.m_override_mat = nullptr;
-					e.m_transform = glm::mat4(1.0f);
-					e.m_program = nullptr;
-					e.m_name = "Empty";
-
-					m_scene->add_entity(e);
-				}
-
-				ImGui::SameLine();
-
-				if (m_selected_entity != USHRT_MAX)
-				{
-					if (ImGui::Button("Remove"))
+					if (ImGui::Button("New"))
 					{
-						m_scene->destroy_entity(m_selected_entity);
-						m_selected_entity = USHRT_MAX;
+						dw::Entity e;
+						e.m_position = glm::vec3(0.0f, 0.0f, 0.0f);
+						e.m_rotation = glm::vec3(0.0f, 0.0f, 0.0f);
+						e.m_scale = glm::vec3(1.0f, 1.0f, 1.0f);
+						e.m_mesh = nullptr;
+						e.m_override_mat = nullptr;
+						e.m_transform = glm::mat4(1.0f);
+						e.m_program = nullptr;
+						e.m_name = "Empty";
+
+						m_scene->add_entity(e);
+					}
+
+					ImGui::SameLine();
+
+					if (m_selected_entity != USHRT_MAX)
+					{
+						if (ImGui::Button("Remove"))
+						{
+							m_scene->destroy_entity(m_selected_entity);
+							m_selected_entity = USHRT_MAX;
+						}
 					}
 				}
 			}
@@ -421,6 +607,8 @@ protected:
 			ImGui::EndDockspace();
 		}
 		ImGui::End();
+
+		ImGui::PopStyleVar();
 	}
     
     void key_pressed(int code) override
