@@ -154,24 +154,64 @@ protected:
 	{
 		if (m_selected_dir)
 		{
-			for (int i = 0; i < m_selected_dir->files.size(); i++)
+			int idx = 0;
+			int num_cols = ImGui::GetContentRegionAvailWidth() / 80;
+			int col_idx = 0;
+
+			col_idx = 0;
+			int size = m_selected_dir->files.size();
+			int rows = size / num_cols;
+			
+			if (size > 0)
 			{
-				ImGuiTreeNodeFlags node_flags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_OpenOnDoubleClick | ((m_selected_file == m_selected_dir->files[i]) ? ImGuiTreeNodeFlags_Selected : 0) | ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
-				ImGui::TreeNodeEx(m_selected_dir->files[i].c_str(), node_flags);
-
-				if (ImGui::IsItemClicked())
-					m_selected_file = m_selected_dir->files[i];
-
-				if (ImGui::BeginDragDropSource())
+				ImGui::Columns(num_cols, "assets", false);
+				
+				for (int i = 0; i < size; i++)
 				{
-					ImGui::SetDragDropPayload(TEXTURE_TYPE, m_selected_file.c_str(), m_selected_file.length());
+					ImFontAtlas* atlas = ImGui::GetIO().Fonts;
 
-					ImGui::BeginTooltip();
-					ImGui::Text(m_selected_file.c_str());
-					ImGui::EndTooltip();
-					ImGui::EndDragDropSource();
+					if (m_selected_file == m_selected_dir->files[i])
+						ImGui::Image(atlas->TexID, ImVec2(50.0f, 50.0f), ImVec2(0, 0), ImVec2(1, 1), ImVec4(0.3f, 0.3f, 0.8f, 0.7f));
+					else
+						ImGui::Image(atlas->TexID, ImVec2(50.0f, 50.0f));
+
+					if (ImGui::IsItemClicked())
+						m_selected_file = m_selected_dir->files[i];
+
+					if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_SourceAllowNullID))
+					{
+						ImGui::SetDragDropPayload(TEXTURE_TYPE, m_selected_file.c_str(), m_selected_file.length());
+
+						ImGui::BeginTooltip();
+						ImGui::Text(m_selected_file.c_str());
+						ImGui::EndTooltip();
+						ImGui::EndDragDropSource();
+					}
+
+					ImGui::Text(m_selected_dir->files[i].c_str());
+
+					ImGui::NextColumn();
 				}
 			}
+
+			//for (int i = 0; i < m_selected_dir->files.size(); i++)
+			//{
+			//	ImGuiTreeNodeFlags node_flags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_OpenOnDoubleClick | ((m_selected_file == m_selected_dir->files[i]) ? ImGuiTreeNodeFlags_Selected : 0) | ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
+			//	ImGui::TreeNodeEx(m_selected_dir->files[i].c_str(), node_flags);
+
+			//	if (ImGui::IsItemClicked())
+			//		m_selected_file = m_selected_dir->files[i];
+
+			//	if (ImGui::BeginDragDropSource())
+			//	{
+			//		ImGui::SetDragDropPayload(TEXTURE_TYPE, m_selected_file.c_str(), m_selected_file.length());
+
+			//		ImGui::BeginTooltip();
+			//		ImGui::Text(m_selected_file.c_str());
+			//		ImGui::EndTooltip();
+			//		ImGui::EndDragDropSource();
+			//	}
+			//}
 		}
 	}
 
