@@ -136,7 +136,7 @@ protected:
 			DirectoryEntry* entry = &dir.directories[i];
 
 			ImGuiTreeNodeFlags node_flags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_OpenOnDoubleClick | ((m_selected_dir == entry) ? ImGuiTreeNodeFlags_Selected : 0);
-			
+
 			bool open = ImGui::TreeNodeEx(dir.directories[i].name.c_str(), node_flags);
 
 			if (ImGui::IsItemClicked())
@@ -152,16 +152,6 @@ protected:
 
 	void print_files()
 	{
-		if (ImGui::Button("Import Asset"))
-		{
-
-		}
-		ImGui::SameLine();
-		if (ImGui::Button("New..."))
-		{
-
-		}
-
 		if (m_selected_dir)
 		{
 			for (int i = 0; i < m_selected_dir->files.size(); i++)
@@ -443,11 +433,46 @@ protected:
 			ImGui::SetNextDock("Editor", ImGuiDockSlot_Bottom);
 			if (ImGui::BeginDock("Asset Browser", &m_editor_state.show_asset_browser))
 			{
-				ImGui::Columns(2);
-				ImGui::SetColumnWidth(0, 200.0f);
-				print_dir(m_root_entry);
-				ImGui::NextColumn();
+				//ImGui::SameLine(ImGui::GetWindowWidth() * 0.17f);
+				if (ImGui::Button("Import Asset"))
+				{
+
+				}
+				ImGui::SameLine();
+				if (ImGui::Button("New..."))
+				{
+
+				}
+
+				ImGui::BeginGroup();
+				ImGui::BeginChild(ImGui::GetID((void*)(intptr_t)0), ImVec2(ImGui::GetWindowWidth() * 0.17f, 0.0f), true);
+
+				if (m_root_entry.directories.size())
+				{
+					ImGuiTreeNodeFlags node_flags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_OpenOnDoubleClick | ((m_selected_dir == &m_root_entry) ? ImGuiTreeNodeFlags_Selected : 0);
+					bool tree_open = ImGui::TreeNodeEx("Assets", node_flags);
+
+					if (ImGui::IsItemClicked())
+						m_selected_dir = &m_root_entry;
+
+					if (tree_open)
+					{
+						print_dir(m_root_entry);
+						ImGui::TreePop();
+					}
+				}
+
+				ImGui::EndChild();
+				ImGui::EndGroup();
+
+				ImGui::SameLine();
+
+				ImGui::BeginGroup();
+				ImGui::BeginChild(ImGui::GetID((void*)(intptr_t)1), ImVec2(0.0f, 0.0f), true);
+				ImGui::Spacing();
 				print_files();
+				ImGui::EndChild();
+				ImGui::EndGroup();
 			}
 			ImGui::EndDock();
 
