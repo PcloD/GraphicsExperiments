@@ -51,7 +51,7 @@ private:
 	DepthStencilState* m_ds;
 
 public:
-    bool init() override
+    bool init(int argc, const char* argv[]) override
     {
         m_camera = new Camera(45.0f,
                               0.1f,
