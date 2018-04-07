@@ -18,7 +18,7 @@ namespace dw
 			bottom_left = nullptr;
 			bottom_right = nullptr;
 			max_height = heightMap->max_height(x_pos, z_pos, size, size) * height_scale;
-			min_height = heightMap->min_height(x_pos, z_pos, size, size )* height_scale;
+			min_height = heightMap->min_height(x_pos, z_pos, size, size ) * height_scale;
 		}
 		else
 		{
@@ -72,12 +72,13 @@ namespace dw
 			return false;
 
 		if (!in_frustum(camera))
-			return false;
+			return true;
 
 		if (lod_level == 0)
 		{
 			full_resolution = true;
 			sdraw_stack.push_back(this);
+			return true;
 		}
 		else
 		{
@@ -122,36 +123,27 @@ namespace dw
 					sdraw_stack.push_back(child);
 				}
 			}
-		}
 
-		return true;
+			return true;
+		}
 	}
 
-	bool Node::in_sphere(float radius, glm::vec3 position)
+	inline float squared(float v) { return v * v; }
+
+	bool Node::in_sphere(float r, glm::vec3 s)
 	{
-		float radius_sqr = radius * radius;
-		glm::vec3 min = glm::vec3(x_pos, min_height, z_pos);
-		glm::vec3 max = glm::vec3(x_pos + size, max_height, z_pos + size);
-		glm::vec3 dist;
+		float dist_squared = r * r;
+		glm::vec3 c1 = glm::vec3(x_pos, min_height, z_pos);
+		glm::vec3 c2 = glm::vec3(x_pos + size, max_height, z_pos + size);
+		
+		if (s.x < c1.x) dist_squared -= squared(s.x - c1.x);
+		else if (s.x > c2.x) dist_squared -= squared(s.x - c2.x);
+		if (s.y < c1.y) dist_squared -= squared(s.y - c1.y);
+		else if (s.y > c2.y) dist_squared -= squared(s.y - c2.y);
+		if (s.z < c1.z) dist_squared -= squared(s.z - c1.z);
+		else if (s.z > c2.z) dist_squared -= squared(s.z - c2.z);
 
-		if (position.x < min.x)
-			dist.x = position.x - min.x;
-		else if (position.x > max.x)
-			dist.x = position.x - max.x;
-
-		if (position.y < min.y)
-			dist.y = position.y - min.y;
-		else if (position.y > max.y)
-			dist.y = position.y - max.y;
-
-		if (position.z < min.z)
-			dist.z = position.z - min.z;
-		else if (position.z > max.z)
-			dist.z = position.z - max.z;
-
-		float dist2 = glm::dot(dist, dist);
-
-		return dist2 <= radius_sqr;
+		return dist_squared > 0;
 	}
 
 	bool Node::in_frustum(Camera *camera)

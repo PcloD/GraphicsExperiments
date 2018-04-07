@@ -60,6 +60,6 @@ namespace dw
 	public:
 		Terrain(std::string file, int size, int lod_depth, float scale, RenderDevice* device);
 		~Terrain();
-		void render(Camera* camera, int width, int height);
+		void render(Camera* lod_camera, Camera* draw_camera, int width, int height);
 	};
 }

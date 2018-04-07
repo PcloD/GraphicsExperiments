@@ -124,7 +124,7 @@ namespace dw
 		delete m_full_patch;
 	}
 
-	void Terrain::render(Camera* camera, int width, int height)
+	void Terrain::render(Camera* lod_camera, Camera* draw_camera, int width, int height)
 	{
 		m_patch_list.clear();
 
@@ -133,22 +133,24 @@ namespace dw
 		{
 			for (unsigned int j = 0; j < m_grid[0].size(); j++) 
 			{
-				m_grid[i][j]->lod_select(m_ranges, m_lod_depth - 1, camera, m_patch_list);
+				m_grid[i][j]->lod_select(m_ranges, m_lod_depth - 1, lod_camera, m_patch_list);
 			}
 		}
 
 		assert(m_patch_list.size() < MAX_PATCHES);
 
-		// Update Uniforms
-		m_per_frame.view = camera->m_view;
-		m_per_frame.proj = camera->m_projection;
-		m_per_frame.pos = glm::vec4(camera->m_position.x, camera->m_position.y, camera->m_position.z, 0.0f);
+		std::cout << m_patch_list.size() << std::endl;
 
-		char* ptr = (char*)m_device->map_buffer(m_camera_ubo, BufferMapType::READ);
+		// Update Uniforms
+		m_per_frame.view = draw_camera->m_view;
+		m_per_frame.proj = draw_camera->m_projection;
+		m_per_frame.pos = glm::vec4(draw_camera->m_position.x, draw_camera->m_position.y, draw_camera->m_position.z, 0.0f);
+
+		char* ptr = (char*)m_device->map_buffer(m_camera_ubo, BufferMapType::WRITE);
 		memcpy(ptr, &m_per_frame, sizeof(PerFrameUniform));
 		m_device->unmap_buffer(m_camera_ubo);
 
-		ptr = (char*)m_device->map_buffer(m_terrain_ubo, BufferMapType::READ);
+		ptr = (char*)m_device->map_buffer(m_terrain_ubo, BufferMapType::WRITE);
 
 		for (int i = 0; i < m_patch_list.size(); i++)
 		{
@@ -156,12 +158,12 @@ namespace dw
 			char* current_ptr = ptr + 256 * i;
 
 			glm::vec3 translation = glm::vec3(node->x_pos, 0.0f, node->z_pos);
-			glm::vec3 grid_dim = node->full_resolution ? glm::vec3(32, 0, 32) : glm::vec3(16, 0, 16);
+			glm::vec3 grid_dim = node->full_resolution ? glm::vec3(32, 32, 0) : glm::vec3(16, 16, 0);
 			float scale = node->size;
 			float range = node->current_range;
 
 			m_uniforms[i].translation_range = glm::vec4(translation.x, translation.y, translation.z, range);
-			m_uniforms[i].griddim_scale = glm::vec4(grid_dim.x, grid_dim.y, grid_dim.z, scale);
+			m_uniforms[i].griddim_scale = glm::vec4(grid_dim.x, grid_dim.y, scale, 0.0f);
 
 			memcpy(current_ptr, &m_uniforms[i], sizeof(TerrainUniforms));
 		}
@@ -169,9 +171,9 @@ namespace dw
 		m_device->unmap_buffer(m_terrain_ubo);
 
 		m_device->bind_framebuffer(nullptr);
+		m_device->set_viewport(width, height, 0, 0);
 		float clear[] = { 0.3f, 0.3f, 0.3f, 1.0f };
 		m_device->clear_framebuffer(ClearTarget::ALL, clear);
-		m_device->set_viewport(width, height, 0, 0);
 
 		m_device->bind_rasterizer_state(m_rs);
 		m_device->bind_depth_stencil_state(m_ds);
