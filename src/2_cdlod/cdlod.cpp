@@ -21,9 +21,10 @@
 #include <debug_draw.h>
 #include "terrain.h"
 
-#define CAMERA_SPEED 0.01f
+#define CAMERA_SPEED 0.1f
 #define CAMERA_SENSITIVITY 0.02f
 #define CAMERA_ROLL 0.0
+#define FAR_PLANE 10000.0f
 
 using namespace math;
 
@@ -44,7 +45,7 @@ public:
     {
         m_camera = new Camera(45.0f,
                               0.1f,
-                              100.0f,
+							  FAR_PLANE,
                               ((float)m_width)/((float)m_height),
                               glm::vec3(5.0f, 5.0f, 5.0f),
                               glm::vec3(0.0f, 0.0f, -1.0f));
@@ -56,7 +57,7 @@ public:
 							  glm::vec3(5.0f, 5.0f, 5.0f),
 							  glm::vec3(0.0f, 0.0f, -1.0f));
 
-		m_terrain = new dw::Terrain("heightmap.r16", 1024, 6, 100.0f, &m_device);
+		m_terrain = new dw::Terrain("heightmap.r16", 1024, 6, 50.0f, FAR_PLANE, &m_device);
 
         return m_debug_renderer.init(&m_device);;
     }
@@ -80,7 +81,7 @@ public:
 		float clear[] = { 0.3f, 0.3f, 0.3f, 1.0f };
 		m_device.clear_framebuffer(ClearTarget::ALL, clear);
 
-		m_terrain->render(m_camera, m_debug_mode ? m_debug_camera : m_camera, m_width, m_height);
+		m_terrain->render(m_camera, m_debug_mode ? m_debug_camera : m_camera, m_width, m_height, &m_debug_renderer);
 
 		if (m_debug_mode)
 			m_debug_renderer.frustum(m_camera->m_projection, m_camera->m_view, glm::vec3(0.0f, 1.0f, 0.0f));

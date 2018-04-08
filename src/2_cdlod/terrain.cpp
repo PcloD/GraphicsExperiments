@@ -10,7 +10,7 @@
 
 namespace dw
 {
-	Terrain::Terrain(std::string file, int size, int lod_depth, float scale, RenderDevice* device)
+	Terrain::Terrain(std::string file, int size, int lod_depth, float scale, float far_plane, RenderDevice* device)
 	{
 		m_device = device;
 		m_lod_depth = lod_depth;
@@ -19,17 +19,25 @@ namespace dw
 		m_full_patch = new TerrainPatch(32, 32, m_device);
 		m_half_patch = new TerrainPatch(16, 16, m_device);
 
-		m_ranges.push_back(1);
-		for (int i = 1; i < m_lod_depth; i++)
-		{
-			m_ranges.push_back(m_ranges[i - 1] + pow(2, i + 2));
-			std::cout << m_ranges[i - 1] << std::endl;
-		}
+		float view_distance_split = far_plane / m_lod_depth;
+
+		//for (int i = 0; i < m_lod_depth; i++)
+		//{
+		//	m_ranges.push_back(view_distance_split * (i + 1));
+		//	std::cout << m_ranges[i] << std::endl;
+		//}
+
+		m_ranges.push_back(5.0f);
+		m_ranges.push_back(10.0f);
+		m_ranges.push_back(20.0f);
+		m_ranges.push_back(100.0f);
+		m_ranges.push_back(200.0f);
+		m_ranges.push_back(1000.0f);
 
 		m_height_map = new HeightMap();
 		m_height_map->initialize(file, size, size, device);
 
-		float rootNodeSize = m_leaf_node_size * pow(2, m_lod_depth - 1);
+		float rootNodeSize = 128.0f;// m_leaf_node_size * pow(2, m_lod_depth - 1);
 
 		int gridWidth = floor(size / rootNodeSize);
 		int gridHeight = floor(size / rootNodeSize);
@@ -100,11 +108,22 @@ namespace dw
 
 		m_camera_ubo = m_device->create_uniform_buffer(uboDesc);
 
+		SamplerStateCreateDesc ssDesc;
+		DW_ZERO_MEMORY(ssDesc);
+
+		ssDesc.min_filter = TextureFilteringMode::LINEAR;
+		ssDesc.mag_filter = TextureFilteringMode::LINEAR;
+		ssDesc.wrap_mode_u = TextureWrapMode::CLAMP_TO_EDGE;
+		ssDesc.wrap_mode_v = TextureWrapMode::CLAMP_TO_EDGE;
+		ssDesc.wrap_mode_w = TextureWrapMode::CLAMP_TO_EDGE;
+
+		m_sampler = m_device->create_sampler_state(ssDesc);
 		//m_root = new Node(m_height_map, size, m_lod_depth - 1, 0, 0, 100.0f);
 	}
 
 	Terrain::~Terrain()
 	{
+		m_device->destroy(m_sampler);
 		m_device->destroy(m_camera_ubo);
 		m_device->destroy(m_terrain_ubo);
 		m_device->destroy(m_program);
@@ -124,7 +143,7 @@ namespace dw
 		delete m_full_patch;
 	}
 
-	void Terrain::render(Camera* lod_camera, Camera* draw_camera, int width, int height)
+	void Terrain::render(Camera* lod_camera, Camera* draw_camera, int width, int height, dd::Renderer* debug_renderer)
 	{
 		m_patch_list.clear();
 
@@ -133,7 +152,7 @@ namespace dw
 		{
 			for (unsigned int j = 0; j < m_grid[0].size(); j++) 
 			{
-				m_grid[i][j]->lod_select(m_ranges, m_lod_depth - 1, lod_camera, m_patch_list);
+				m_grid[i][j]->lod_select(m_ranges, m_lod_depth - 1, lod_camera, m_patch_list, debug_renderer);
 			}
 		}
 
@@ -144,7 +163,7 @@ namespace dw
 		// Update Uniforms
 		m_per_frame.view = draw_camera->m_view;
 		m_per_frame.proj = draw_camera->m_projection;
-		m_per_frame.pos = glm::vec4(draw_camera->m_position.x, draw_camera->m_position.y, draw_camera->m_position.z, 0.0f);
+		m_per_frame.pos = glm::vec4(lod_camera->m_position.x, lod_camera->m_position.y, lod_camera->m_position.z, 0.0f);
 
 		char* ptr = (char*)m_device->map_buffer(m_camera_ubo, BufferMapType::WRITE);
 		memcpy(ptr, &m_per_frame, sizeof(PerFrameUniform));
@@ -162,8 +181,31 @@ namespace dw
 			float scale = node->size;
 			float range = node->current_range;
 
+			glm::vec4 color = glm::vec4(0.5, 0.5, 0.5, 1.0);
+			if (range == m_ranges[0])
+			{
+				color = glm::vec4(1.0);
+			}
+			else if (range == m_ranges[1])
+			{
+				color = glm::vec4(0.0, 1.0, 0.0, 1.0);
+			}
+			else if (range == m_ranges[2])
+			{
+				color = glm::vec4(0.0, 0.0, 1.0, 1.0);
+			}
+			else if (range == m_ranges[3])
+			{
+				color = glm::vec4(1.0, 1.0, 0.0, 1.0);
+			}
+			else if (range == m_ranges[4])
+			{
+				color = glm::vec4(0.8, 0.5, 0.2, 1.0);
+			}
+
 			m_uniforms[i].translation_range = glm::vec4(translation.x, translation.y, translation.z, range);
 			m_uniforms[i].griddim_scale = glm::vec4(grid_dim.x, grid_dim.y, scale, 0.0f);
+			m_uniforms[i].color = color;
 
 			memcpy(current_ptr, &m_uniforms[i], sizeof(TerrainUniforms));
 		}
@@ -180,6 +222,8 @@ namespace dw
 		m_device->bind_shader_program(m_program);
 		m_device->set_primitive_type(PrimitiveType::TRIANGLES);
 		m_device->bind_uniform_buffer(m_camera_ubo, ShaderType::VERTEX, 0);
+		m_device->bind_sampler_state(m_sampler, ShaderType::VERTEX, 0);
+		m_device->bind_texture(m_height_map->texture(), ShaderType::VERTEX, 0);
 
 		// Draw
 		for (int i = 0; i < m_patch_list.size(); i++)

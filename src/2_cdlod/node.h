@@ -2,6 +2,7 @@
 
 #include <vector>
 #include <glm.hpp>
+#include <debug_draw.h>
 
 class HeightMap;
 struct Camera;
@@ -26,7 +27,7 @@ namespace dw
 
 		Node(HeightMap* heightMap, float node_size, int lod_depth, float x, float z, float height_scale);
 		~Node();
-		bool lod_select(std::vector<float>& ranges, int lod_level, Camera *camera, std::vector<Node*>& sdraw_stack);
+		bool lod_select(std::vector<float>& ranges, int lod_level, Camera *camera, std::vector<Node*>& sdraw_stack, dd::Renderer* debug_renderer = nullptr);
 		bool in_sphere(float radius, glm::vec3 position);
 		bool in_frustum(Camera *camera);
 	};

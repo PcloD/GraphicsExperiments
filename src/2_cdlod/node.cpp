@@ -17,8 +17,8 @@ namespace dw
 			top_right = nullptr;
 			bottom_left = nullptr;
 			bottom_right = nullptr;
-			max_height = heightMap->max_height(x_pos, z_pos, size, size) * height_scale;
-			min_height = heightMap->min_height(x_pos, z_pos, size, size ) * height_scale;
+			max_height = height_scale;// heightMap->max_height(x_pos, z_pos, size, size) * height_scale;
+			min_height = 0.0f; // heightMap->min_height(x_pos, z_pos, size, size) * height_scale;
 		}
 		else
 		{
@@ -64,7 +64,7 @@ namespace dw
 		}
 	}
 
-	bool Node::lod_select(std::vector<float>& ranges, int lod_level, Camera *camera, std::vector<Node*>& sdraw_stack)
+	bool Node::lod_select(std::vector<float>& ranges, int lod_level, Camera *camera, std::vector<Node*>& sdraw_stack, dd::Renderer* debug_renderer)
 	{
 		current_range = ranges[lod_level];
 
@@ -78,7 +78,8 @@ namespace dw
 		{
 			full_resolution = true;
 			sdraw_stack.push_back(this);
-			return true;
+			//debug_renderer->aabb(glm::vec3(x_pos, min_height, z_pos), glm::vec3(x_pos + size, max_height, z_pos + size), glm::vec3(1.0f, 0.0f, 0.0f));
+			return true;		   
 		}
 		else
 		{
@@ -86,41 +87,46 @@ namespace dw
 			{
 				full_resolution = true;
 				sdraw_stack.push_back(this);
+				//debug_renderer->aabb(glm::vec3(x_pos, min_height, z_pos), glm::vec3(x_pos + size, max_height, z_pos + size), glm::vec3(1.0f, 0.0f, 0.0f));
 			}
 			else
 			{
 				Node *child;
 				child = top_left;
 
-				if (!child->lod_select(ranges, lod_level - 1, camera, sdraw_stack)) 
+				if (!child->lod_select(ranges, lod_level - 1, camera, sdraw_stack, debug_renderer))
 				{
 					child->full_resolution = false;
 					child->current_range = current_range;
 					sdraw_stack.push_back(child);
+					//debug_renderer->aabb(glm::vec3(child->x_pos, child->min_height, child->z_pos), glm::vec3(child->x_pos + child->size, child->max_height, child->z_pos + child->size), glm::vec3(1.0f, 0.0f, 0.0f));
 				}
 
 				child = top_right;
-				if (!child->lod_select(ranges, lod_level - 1, camera, sdraw_stack)) 
+				if (!child->lod_select(ranges, lod_level - 1, camera, sdraw_stack, debug_renderer))
 				{
 					child->full_resolution = false;
 					child->current_range = current_range;
 					sdraw_stack.push_back(child);
+					//debug_renderer->aabb(glm::vec3(child->x_pos, child->min_height, child->z_pos), glm::vec3(child->x_pos + child->size, child->max_height, child->z_pos + child->size), glm::vec3(1.0f, 0.0f, 0.0f));
 				}
 
 				child = bottom_left;
-				if (!child->lod_select(ranges, lod_level - 1, camera, sdraw_stack)) 
+				if (!child->lod_select(ranges, lod_level - 1, camera, sdraw_stack, debug_renderer))
 				{
 					child->full_resolution = false;
 					child->current_range = current_range;
 					sdraw_stack.push_back(child);
+					//debug_renderer->aabb(glm::vec3(child->x_pos, child->min_height, child->z_pos), glm::vec3(child->x_pos + child->size, child->max_height, child->z_pos + child->size), glm::vec3(1.0f, 0.0f, 0.0f));
 				}
 
 				child = bottom_right;
-				if (!child->lod_select(ranges, lod_level - 1, camera, sdraw_stack)) 
+				if (!child->lod_select(ranges, lod_level - 1, camera, sdraw_stack, debug_renderer))
 				{
 					child->full_resolution = false;
 					child->current_range = current_range;
 					sdraw_stack.push_back(child);
+					//debug_renderer->aabb(glm::vec3(child->x_pos, child->min_height, child->z_pos), glm::vec3(child->x_pos + child->size, child->max_height, child->z_pos + child->size), glm::vec3(1.0f, 0.0f, 0.0f));
 				}
 			}
 

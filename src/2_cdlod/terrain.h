@@ -4,6 +4,7 @@
 #include <vector>
 #include <glm.hpp>
 #include <Macros.h>
+#include <debug_draw.h>
 
 class Camera;
 class HeightMap;
@@ -14,8 +15,9 @@ struct ShaderProgram;
 struct RasterizerState;
 struct DepthStencilState;
 struct UniformBuffer;
+struct SamplerState;
 
-#define MAX_PATCHES 1024
+#define MAX_PATCHES 2048
 
 namespace dw
 {
@@ -25,6 +27,7 @@ namespace dw
 	{
 		glm::vec4 translation_range;
 		glm::vec4 griddim_scale;
+		glm::vec4 color;
 	};
 
 	struct DW_ALIGNED(16) PerFrameUniform
@@ -51,6 +54,7 @@ namespace dw
 		PerFrameUniform m_per_frame;
 		TerrainPatch* m_full_patch;
 		TerrainPatch* m_half_patch;
+		SamplerState* m_sampler;
 		int m_lod_depth;
 		int  m_leaf_node_size;
 		std::vector<float> m_ranges;
@@ -58,8 +62,8 @@ namespace dw
 		std::vector< std::vector<Node*> > m_grid;
 
 	public:
-		Terrain(std::string file, int size, int lod_depth, float scale, RenderDevice* device);
+		Terrain(std::string file, int size, int lod_depth, float scale, float far_plane, RenderDevice* device);
 		~Terrain();
-		void render(Camera* lod_camera, Camera* draw_camera, int width, int height);
+		void render(Camera* lod_camera, Camera* draw_camera, int width, int height, dd::Renderer* debug_renderer);
 	};
 }
