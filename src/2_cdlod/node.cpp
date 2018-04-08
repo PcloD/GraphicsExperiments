@@ -148,8 +148,9 @@ namespace dw
 
 	bool Node::in_frustum(Camera *camera)
 	{
-		glm::vec3 min_v = glm::vec3(x_pos, min_height, z_pos);
-		glm::vec3 max_v = glm::vec3(x_pos + size, max_height, z_pos + size);
-		return camera->aabb_inside_frustum(max_v, min_v);
+		dw::AABB aabb;
+		aabb.min = glm::vec3(x_pos, min_height, z_pos);
+		aabb.max = glm::vec3(x_pos + size, max_height, z_pos + size);
+		return dw::intersects(camera->m_frustum, aabb);
 	}
 }

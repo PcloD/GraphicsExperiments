@@ -41,6 +41,8 @@ private:
     float m_grid_y;
     bool m_debug_mode = false;
     glm::mat4 m_model;
+	dw::AABB m_aabb;
+	int m_count = 0;
     
 public:
     bool init(int argc, const char* argv[]) override
@@ -66,12 +68,17 @@ public:
         m_rotation = 60.0f;
         m_grid_spacing = 1.0f;
         m_grid_y = 0.0f;
+
+		m_aabb.min = glm::vec3(-10.0f, -10.0f, -10.0f);
+		m_aabb.max = glm::vec3(10.0f, 10.0f, 10.0f);
         
         return m_debug_renderer.init(&m_device);
     }
     
     void update(double delta) override
     {
+		m_count = 0;
+
         updateCamera();
         
         m_device.bind_framebuffer(nullptr);
@@ -79,6 +86,12 @@ public:
         
         float clear[] = { 0.3f, 0.3f, 0.3f, 1.0f };
         m_device.clear_framebuffer(ClearTarget::ALL, clear);
+
+		if (dw::intersects(m_camera->m_frustum, m_aabb))
+		{
+			m_debug_renderer.aabb(m_aabb.min, m_aabb.max, m_color);
+			m_count++;
+		}
         
         ImGui::Begin("Debug Draw");
         
@@ -94,19 +107,26 @@ public:
         {
             m_debug_mode = !m_debug_mode;
         }
+
+		std::string text = "Culling Passed: ";
+		text += std::to_string(m_count);
+
+		ImGui::Text(text.c_str());
         
         ImGui::End();
         
         m_debug_renderer.capsule(20.0f, 5.0f, glm::vec3(-20.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0));
-        m_debug_renderer.grid(101.0f, 101.0f, m_grid_y, m_grid_spacing, glm::vec3(1.0f));
-        //m_debug_renderer.aabb(m_min_extents, m_max_extents, m_pos, m_color);
+        //m_debug_renderer.grid(101.0f, 101.0f, m_grid_y, m_grid_spacing, glm::vec3(1.0f));
         m_debug_renderer.sphere(5.0f, glm::vec3(0.0f, 0.0f, 20.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-        m_model = glm::rotate(glm::mat4(1.0f), glm::radians(m_rotation), glm::vec3(0.0f, 1.0f, 0.0f));
-        m_debug_renderer.obb(m_min_extents, m_max_extents, m_model, m_color);
+        //m_model = glm::rotate(glm::mat4(1.0f), glm::radians(m_rotation), glm::vec3(0.0f, 1.0f, 0.0f));
+        //m_debug_renderer.obb(m_min_extents, m_max_extents, m_model, m_color);
         
-        if (m_debug_mode)
-            m_debug_renderer.frustum(m_camera->m_projection, m_camera->m_view, glm::vec3(0.0f, 1.0f, 0.0f));
-        
+		if (m_debug_mode)
+		{
+			m_debug_renderer.aabb(m_aabb.min, m_aabb.max, m_color);
+			m_debug_renderer.frustum(m_camera->m_projection, m_camera->m_view, glm::vec3(0.0f, 1.0f, 0.0f));
+		}
+            
         m_debug_renderer.render(nullptr, m_width, m_height, m_debug_mode ? m_debug_camera->m_view_projection : m_camera->m_view_projection);
     }
     
