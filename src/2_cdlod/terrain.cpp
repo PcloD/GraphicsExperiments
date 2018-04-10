@@ -21,26 +21,23 @@ namespace dw
 
 		float view_distance_split = far_plane / m_lod_depth;
 
-		//for (int i = 0; i < m_lod_depth; i++)
-		//{
-		//	m_ranges.push_back(view_distance_split * (i + 1));
-		//	std::cout << m_ranges[i] << std::endl;
-		//}
+		std::vector<float> temp_ranges;
+		
+		m_ranges.resize(lod_depth);
+		m_ranges[lod_depth - 1] = far_plane / 2.0f;
 
-		m_ranges.push_back(5.0f);
-		m_ranges.push_back(10.0f);
-		m_ranges.push_back(20.0f);
-		m_ranges.push_back(100.0f);
-		m_ranges.push_back(200.0f);
-		m_ranges.push_back(1000.0f);
+		for (int i = (lod_depth - 2); i >= 0 ; i--)
+		{
+			m_ranges[i] = m_ranges[i + 1] / 2.0f;
+		}
 
 		m_height_map = new HeightMap();
 		m_height_map->initialize(file, size, size, device);
 
-		float rootNodeSize = 128.0f;// m_leaf_node_size * pow(2, m_lod_depth - 1);
+		float rootNodeSize = 1024.0f;// m_leaf_node_size * pow(2, m_lod_depth - 1);
 
-		int gridWidth = floor(size / rootNodeSize);
-		int gridHeight = floor(size / rootNodeSize);
+		int gridWidth = floor(16384.0f / rootNodeSize);
+		int gridHeight = floor(16384.0f / rootNodeSize);
 
 		m_grid.resize(gridWidth);
 		for (int i = 0; i < gridWidth; i++) 
