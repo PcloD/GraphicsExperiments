@@ -102,8 +102,9 @@ public:
 
 		m_shadow_settings.lambda = 0.75f;
 		m_shadow_settings.split_count = 3;
+		m_shadow_settings.shadow_map_size = 1024;
 
-		m_shadows.initialize(m_shadow_settings, m_camera, m_width, m_height, direction);
+		m_shadows.initialize(&m_device, m_shadow_settings, m_camera, m_width, m_height, direction);
 		test_view = glm::lookAt(glm::vec3(0.0f), glm::vec3(10.0f), glm::vec3(0.0f, 1.0f, 0.0f));
 		test_proj = glm::ortho(-10.0f, 10.0f, -10.0f, 10.0f, 0.1f, 100.0f);
 	
@@ -154,12 +155,13 @@ public:
 			ImGui::Checkbox("Show Frustum Splits", &show_frustum_splits);
 			ImGui::Checkbox("Debug Camera", &debug_mode);
 			ImGui::InputInt("Num Cascades", &m_shadow_settings.split_count);
+			ImGui::InputInt("Shadow Map Size", &m_shadow_settings.shadow_map_size);
 			ImGui::InputFloat("Lambda", &m_shadow_settings.lambda);
 			ImGui::DragFloat3("Direction", &direction.x, 0.1f);
 
 			if (ImGui::Button("Reset"))
 			{
-				m_shadows.initialize(m_shadow_settings, m_camera, m_width, m_height, direction);
+				m_shadows.initialize(&m_device, m_shadow_settings, m_camera, m_width, m_height, direction);
 			}
 		}
 		ImGui::End();

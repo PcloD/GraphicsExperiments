@@ -5,6 +5,9 @@
 #define MAX_FRUSTUM_SPLITS 8
 
 class Camera;
+class RenderDevice;
+struct Texture2D;
+struct Framebuffer;
 
 struct FrustumSplit
 {
@@ -19,11 +22,14 @@ struct ShadowSettings
 {
 	float lambda;
 	int split_count;
+	int shadow_map_size;
 };
 
 class Shadows
 {
 private:
+	Texture2D* m_shadow_maps;
+	Framebuffer* m_shadow_fbos[MAX_FRUSTUM_SPLITS];
 	ShadowSettings m_settings;
 	FrustumSplit m_splits[MAX_FRUSTUM_SPLITS];
 	glm::mat4 m_light_view;
@@ -33,7 +39,7 @@ private:
 public:
 	Shadows();
 	~Shadows();
-	void initialize(ShadowSettings settings, Camera* camera, int _width, int _height, glm::vec3 dir);
+	void initialize(RenderDevice* device, ShadowSettings settings, Camera* camera, int _width, int _height, glm::vec3 dir);
 	void update(Camera* camera, glm::vec3 dir);
 	void update_splits(Camera* camera);
 	void update_frustum_corners(Camera* camera);

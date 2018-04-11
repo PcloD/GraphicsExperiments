@@ -1,10 +1,15 @@
 #include "shadows.h"
 #include <camera.h>
+#include <render_device.h>
 #include <gtc/matrix_transform.hpp>
+#include <Macros.h>
 
 Shadows::Shadows()
 {
+	m_shadow_maps = nullptr;
 
+	for (int i = 0; i < 8; i++)
+		m_shadow_fbos[i] = nullptr;
 }
 
 Shadows::~Shadows()
@@ -22,9 +27,48 @@ glm::mat4 Shadows::split_view_proj(int i)
 	return m_crop_matrices[i];
 }
 
-void Shadows::initialize(ShadowSettings settings, Camera* camera, int _width, int _height, glm::vec3 dir)
+void Shadows::initialize(RenderDevice* device, ShadowSettings settings, Camera* camera, int _width, int _height, glm::vec3 dir)
 {
 	m_settings = settings;
+
+	if (m_shadow_maps)
+		device->destroy(m_shadow_maps);
+
+	Texture2DArrayCreateDesc desc;
+	DW_ZERO_MEMORY(desc);
+
+	desc.array_slices = m_settings.split_count;
+	desc.format = TextureFormat::D32_FLOAT_S8_UINT;
+	desc.height = m_settings.shadow_map_size;
+	desc.width = m_settings.shadow_map_size;
+	desc.mipmap_levels = 1;
+	
+	m_shadow_maps = device->create_texture_2d_array(desc);
+
+	for (int i = 0; i < 8; i++)
+	{
+		if (m_shadow_fbos[i])
+		{
+			device->destroy(m_shadow_fbos[i]);
+			m_shadow_fbos[i] = nullptr;
+		}
+	}
+
+	for (int i = 0; i < desc.array_slices; i++)
+	{
+		DepthStencilTargetDesc ds_desc;
+
+		ds_desc.arraySlice = i;
+		ds_desc.mipSlice = 0;
+		ds_desc.texture = m_shadow_maps;
+		
+		FramebufferCreateDesc fbo_desc;
+
+		fbo_desc.renderTargetCount = 0;
+		fbo_desc.depthStencilTarget = ds_desc;
+
+		m_shadow_fbos[i] = device->create_framebuffer(fbo_desc);
+	}
 
 	float camera_fov = camera->m_fov;
 	float width = _width;
