@@ -101,6 +101,7 @@ public:
 		direction = glm::normalize(dir);
 
 		m_shadow_settings.lambda = 0.75f;
+		m_shadow_settings.near_offset = 100.0f;
 		m_shadow_settings.split_count = 3;
 		m_shadow_settings.shadow_map_size = 1024;
 

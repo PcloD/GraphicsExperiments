@@ -194,7 +194,7 @@ void Shadows::update_crop_matrices(glm::mat4 t_modelview)
 
 		tmax.z += 50; // TODO: This solves the dissapearing shadow problem. but how to fix?
 
-		glm::mat4 t_ortho = glm::ortho(-1.0f, 1.0f, -1.0f, 1.0f, -tmax.z, -tmin.z);
+		glm::mat4 t_ortho = glm::ortho(-1.0f, 1.0f, -1.0f, 1.0f, -m_settings.near_offset, -tmin.z);
 		glm::mat4 t_shad_mvp = t_ortho * t_modelview;
 
 		// find the extends of the frustum slice as projected in light's homogeneous coordinates

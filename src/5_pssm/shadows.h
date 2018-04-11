@@ -21,6 +21,7 @@ struct FrustumSplit
 struct ShadowSettings
 {
 	float lambda;
+	float near_offset;
 	int split_count;
 	int shadow_map_size;
 };
