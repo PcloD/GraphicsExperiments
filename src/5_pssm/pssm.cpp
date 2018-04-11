@@ -18,6 +18,7 @@
 
 #include <Macros.h>
 #include <debug_draw.h>
+#include "shadows.h"
 
 #define CAMERA_SPEED 0.05f
 #define CAMERA_SENSITIVITY 0.02f
@@ -56,17 +57,6 @@ struct DW_ALIGNED(16) LightUniforms
 	SpotLight spot_lights[MAX_SPOT_LIGHT];
 };
 
-struct PSSMSettings
-{
-	int   num_cascades;
-	float size;
-	float near_plane;
-	float distance;
-	bool  visualize_cascades;
-	bool  debug_mode;
-	glm::vec3 direction;
-};
-
 class PSSM : public dw::Application
 {
 private:
@@ -76,10 +66,16 @@ private:
     float m_sideways_speed = 0.0f;
     bool m_mouse_look = false;
     dd::Renderer m_debug_renderer;
-	PSSMSettings m_settings;
-	glm::vec3 m_frustum_corners[8];
-	glm::mat4 m_light_view;
-    
+	ShadowSettings m_shadow_settings;
+	Shadows m_shadows;
+	bool  visualize_cascades;
+	bool  show_shadow_frustum;
+	bool  show_frustum_splits;
+	bool  debug_mode;
+	glm::vec3 direction;
+	glm::mat4 test_proj;
+	glm::mat4 test_view;
+
 public:
     bool init(int argc, const char* argv[]) override
     {
@@ -97,115 +93,81 @@ public:
                               glm::vec3(0.0f, 0.0f, 10.0f),
                               glm::vec3(0.0f, 0.0f, -1.0f));
 
-		m_settings.near_plane = 0.1f;
-		m_settings.num_cascades = 3;
-		m_settings.size = 1024;
-		m_settings.distance = 500.0f;
-		m_settings.debug_mode = false;
-		m_settings.visualize_cascades = false;
-		
+		debug_mode = false;
+		visualize_cascades = false;
+		show_shadow_frustum = false;
+		show_frustum_splits = false;
 		glm::vec3 dir = glm::vec3(1.0f, -1.0f, 0.0f);
-		m_settings.direction = glm::normalize(dir);
-        
+		direction = glm::normalize(dir);
+
+		m_shadow_settings.lambda = 0.75f;
+		m_shadow_settings.split_count = 3;
+
+		m_shadows.initialize(m_shadow_settings, m_camera, m_width, m_height, direction);
+		test_view = glm::lookAt(glm::vec3(0.0f), glm::vec3(10.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+		test_proj = glm::ortho(-10.0f, 10.0f, -10.0f, 10.0f, 0.1f, 100.0f);
+	
         return m_debug_renderer.init(&m_device);
     }
-
-	void update_frustum_splits()
-	{
-		glm::mat4 inv_view_proj = glm::inverse(m_camera->m_view_projection);
-
-		for (int i = 0; i < 8; i++)
-		{
-			glm::vec4 v = inv_view_proj * dd::kFrustumCorners[i];
-			v = v / v.w;
-			m_frustum_corners[i] = glm::vec3(v.x, v.y, v.z);
-		}
-
-		glm::vec3 near_top_middle = (dd::kFrustumCorners[5] + dd::kFrustumCorners[6]) / 2.0f;
-		glm::vec3 near_bottom_middle = (dd::kFrustumCorners[4] + dd::kFrustumCorners[7]) / 2.0f;
-		glm::vec3 far_top_middle = (dd::kFrustumCorners[1] + dd::kFrustumCorners[2]) / 2.0f;
-		glm::vec3 far_bottom_middle = (dd::kFrustumCorners[0] + dd::kFrustumCorners[3]) / 2.0f;
-		glm::vec3 near_middle = (near_top_middle + near_bottom_middle) / 2.0f;
-		glm::vec3 far_middle = (far_top_middle + far_bottom_middle) / 2.0f;
-		glm::vec3 middle = (near_middle + far_middle) / 2.0f;
-		glm::vec3 light_pos = middle - m_settings.direction * m_settings.distance;
-		glm::vec3 right = glm::normalize(glm::cross(m_settings.direction, glm::vec3(0.0f, 1.0f, 0.0f)));
-		glm::vec3 up = glm::normalize(glm::cross(right, m_settings.direction));
-
-		m_light_view = glm::lookAt(light_pos, middle, up);
-
-		glm::vec3 light_view_corners[8];
-
-		glm::vec3 min = glm::vec3(INFINITY, INFINITY, INFINITY);
-		glm::vec3 max = glm::vec3(-INFINITY, -INFINITY, -INFINITY);
-
-		for (int i = 0; i < 8; i++)
-		{
-			glm::vec4 v = m_light_view * glm::vec4(m_frustum_corners[i].x, m_frustum_corners[i].y, m_frustum_corners[i].z, 1.0f);
-			light_view_corners[i] = glm::vec3(v.x, v.y, v.z);
-
-			if (light_view_corners[i].x > max.x)
-				max.x = light_view_corners[i].x;
-			if (light_view_corners[i].y > max.y)
-				max.y = light_view_corners[i].y;
-			if (light_view_corners[i].z > max.z)
-				max.z = light_view_corners[i].z;
-
-			if (light_view_corners[i].x < min.x)
-				min.x = light_view_corners[i].x;
-			if (light_view_corners[i].y < min.y)
-				min.y = light_view_corners[i].y;
-			if (light_view_corners[i].z < min.z)
-				min.z = light_view_corners[i].z;
-		}
-
-		glm::mat4 inv_light_view = glm::inverse(m_light_view);
-		glm::vec4 light_min = inv_light_view * glm::vec4(min.x, min.y, min.z, 1.0f);
-		glm::vec4 light_max = inv_light_view * glm::vec4(max.x, max.y, max.z, 1.0f);
-
-		m_debug_renderer.line(light_min, glm::vec3(light_max.x, light_min.y, light_min.z), glm::vec3(1.0f, 0.0f, 0.0f));
-		m_debug_renderer.line(glm::vec3(light_max.x, light_min.y, light_min.z), 
-							  glm::vec3(light_max.x, light_max.y, light_min.z),
-							  glm::vec3(1.0f, 0.0f, 0.0f));
-		m_debug_renderer.line(glm::vec3(light_max.x, light_max.y, light_min.z),
-							  glm::vec3(light_min.x, light_max.y, light_min.z),
-							  glm::vec3(1.0f, 0.0f, 0.0f));
-		m_debug_renderer.line(glm::vec3(light_min.x, light_max.y, light_min.z),
-							  light_min,
-							  glm::vec3(1.0f, 0.0f, 0.0f));
-
-		float c_log, c_uniform;
-
-
-	}
     
     void update(double delta) override
     {
         updateCamera();
-		update_frustum_splits();
-        
+		m_shadows.update(m_camera, direction);
+
+		for (int i = 0; i < m_shadow_settings.split_count; i++)
+		{
+			FrustumSplit& split = m_shadows.frustum_splits()[i];
+			
+			if (show_frustum_splits)
+			{
+				m_debug_renderer.line(split.corners[0], split.corners[3], glm::vec3(1.0f));
+				m_debug_renderer.line(split.corners[3], split.corners[2], glm::vec3(1.0f));
+				m_debug_renderer.line(split.corners[2], split.corners[1], glm::vec3(1.0f));
+				m_debug_renderer.line(split.corners[1], split.corners[0], glm::vec3(1.0f));
+
+				m_debug_renderer.line(split.corners[4], split.corners[7], glm::vec3(1.0f));
+				m_debug_renderer.line(split.corners[7], split.corners[6], glm::vec3(1.0f));
+				m_debug_renderer.line(split.corners[6], split.corners[5], glm::vec3(1.0f));
+				m_debug_renderer.line(split.corners[5], split.corners[4], glm::vec3(1.0f));
+
+				m_debug_renderer.line(split.corners[0], split.corners[4], glm::vec3(1.0f));
+				m_debug_renderer.line(split.corners[1], split.corners[5], glm::vec3(1.0f));
+				m_debug_renderer.line(split.corners[2], split.corners[6], glm::vec3(1.0f));
+				m_debug_renderer.line(split.corners[3], split.corners[7], glm::vec3(1.0f));
+			}
+			
+			if (show_shadow_frustum)
+				m_debug_renderer.frustum(m_shadows.split_view_proj(i), glm::vec3(1.0f, 0.0f, 0.0f));
+		}
+
         m_device.bind_framebuffer(nullptr);
         m_device.set_viewport(m_width, m_height, 0, 0);
         
         float clear[] = { 0.3f, 0.3f, 0.3f, 1.0f };
         m_device.clear_framebuffer(ClearTarget::ALL, clear);
 
-		
-
 		if (ImGui::Begin("PSSM"))
 		{
-			ImGui::Checkbox("Visualize Cascades", &m_settings.visualize_cascades);
-			ImGui::Checkbox("Debug Mode", &m_settings.debug_mode);
-			ImGui::InputInt("Num Cascades", &m_settings.num_cascades);
-			ImGui::InputFloat("Cascade Size", &m_settings.size);
-			ImGui::InputFloat("Near Plane", &m_settings.near_plane);
+			ImGui::Checkbox("Visualize Cascades", &visualize_cascades);
+			ImGui::Checkbox("Show Shadow Frustums", &show_shadow_frustum);
+			ImGui::Checkbox("Show Frustum Splits", &show_frustum_splits);
+			ImGui::Checkbox("Debug Camera", &debug_mode);
+			ImGui::InputInt("Num Cascades", &m_shadow_settings.split_count);
+			ImGui::InputFloat("Lambda", &m_shadow_settings.lambda);
+			ImGui::DragFloat3("Direction", &direction.x, 0.1f);
+
+			if (ImGui::Button("Reset"))
+			{
+				m_shadows.initialize(m_shadow_settings, m_camera, m_width, m_height, direction);
+			}
 		}
 		ImGui::End();
 
-		if (m_settings.debug_mode)
+		if (debug_mode)
 			m_debug_renderer.frustum(m_camera->m_projection, m_camera->m_view, glm::vec3(0.0f, 1.0f, 0.0f));
 
-        m_debug_renderer.render(nullptr, m_width, m_height, m_settings.debug_mode ? m_debug_camera->m_view_projection : m_camera->m_view_projection);
+        m_debug_renderer.render(nullptr, m_width, m_height, debug_mode ? m_debug_camera->m_view_projection : m_camera->m_view_projection);
     }
     
     void shutdown() override
@@ -247,7 +209,7 @@ public:
     {
         Camera* current = m_camera;
         
-        if (m_settings.debug_mode)
+        if (debug_mode)
             current = m_debug_camera;
         
         float forward_delta = m_heading_speed * m_delta;
