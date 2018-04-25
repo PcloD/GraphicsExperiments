@@ -7,6 +7,6 @@ set(GRAPHICS_DEMO_SOURCE ${PROJECT_SOURCE_DIR}/src/7_graphics_demo/graphics_demo
                          ${PROJECT_SOURCE_DIR}/src/7_graphics_demo/render_graph.cpp
                          ${PROJECT_SOURCE_DIR}/src/7_graphics_demo/render_node.cpp)
 
-add_executable(7_graphics_demo ${PBR_SOURCE})				
+add_executable(7_graphics_demo ${GRAPHICS_DEMO_SOURCE})				
 
 target_link_libraries(7_graphics_demo dwSampleFramework)
