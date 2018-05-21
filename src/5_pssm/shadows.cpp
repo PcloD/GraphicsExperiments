@@ -197,20 +197,60 @@ void Shadows::update_crop_matrices(glm::mat4 t_modelview)
 		glm::mat4 t_ortho = glm::ortho(-1.0f, 1.0f, -1.0f, 1.0f, -m_settings.near_offset, -tmin.z);
 		glm::mat4 t_shad_mvp = t_ortho * t_modelview;
 
-		// find the extends of the frustum slice as projected in light's homogeneous coordinates
-		for (int j = 0; j < 8; j++) 
+		if (m_stable_pssm)
 		{
-			t_transf = t_shad_mvp * glm::vec4(t_frustum.corners[j], 1.0f);
+			// Calculate frustum split center
+			glm::vec3 center(0.0f, 0.0f, 0.0f);
 
-			t_transf.x /= t_transf.w;
-			t_transf.y /= t_transf.w;
+			for (int j = 0; j < 8; j++)
+				center += t_frustum.corners[j];
+			
+			center /= 8.0f;
 
-			if (t_transf.x > tmax.x) { tmax.x = t_transf.x; }
-			if (t_transf.x < tmin.x) { tmin.x = t_transf.x; }
-			if (t_transf.y > tmax.y) { tmax.y = t_transf.y; }
-			if (t_transf.y < tmin.y) { tmin.y = t_transf.y; }
+			// Calculate bounding sphere radius
+			float radius = 0.0f;
+
+			for (int j = 0; j < 8; j++)
+			{
+				float length = glm::length(t_frustum.corners[j] - center);
+				radius = glm::max(radius, length);
+			}
+
+			radius = floor(radius);
+
+			// Find bounding box that fits the sphere
+			glm::vec3 radius3(radius, radius, radius);
+
+			glm::vec4 max = glm::vec4(center + radius3, 1.0f);
+			glm::vec4 min = glm::vec4(center - radius3, 1.0f);
+
+			max = t_shad_mvp * max;
+			max /= max.w;
+
+			tmax = glm::vec3(max);
+
+			min = t_shad_mvp * min;
+			min /= min.w;
+
+			tmin = glm::vec3(min);
 		}
+		else
+		{
+			// find the extends of the frustum slice as projected in light's homogeneous coordinates
+			for (int j = 0; j < 8; j++)
+			{
+				t_transf = t_shad_mvp * glm::vec4(t_frustum.corners[j], 1.0f);
 
+				t_transf.x /= t_transf.w;
+				t_transf.y /= t_transf.w;
+
+				if (t_transf.x > tmax.x) { tmax.x = t_transf.x; }
+				if (t_transf.x < tmin.x) { tmin.x = t_transf.x; }
+				if (t_transf.y > tmax.y) { tmax.y = t_transf.y; }
+				if (t_transf.y < tmin.y) { tmin.y = t_transf.y; }
+			}
+		}
+		
 		glm::vec2 tscale(2.0f / (tmax.x - tmin.x), 2.0f / (tmax.y - tmin.y));
 		glm::vec2 toffset(-0.5f * (tmax.x + tmin.x) * tscale.x, -0.5f * (tmax.y + tmin.y) * tscale.y);
 

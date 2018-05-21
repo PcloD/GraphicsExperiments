@@ -155,6 +155,7 @@ public:
 			ImGui::Checkbox("Show Shadow Frustums", &show_shadow_frustum);
 			ImGui::Checkbox("Show Frustum Splits", &show_frustum_splits);
 			ImGui::Checkbox("Debug Camera", &debug_mode);
+			ImGui::Checkbox("Stable Shadows", &m_shadows.m_stable_pssm);
 			ImGui::InputInt("Num Cascades", &m_shadow_settings.split_count);
 			ImGui::InputInt("Shadow Map Size", &m_shadow_settings.shadow_map_size);
 			ImGui::InputFloat("Lambda", &m_shadow_settings.lambda);

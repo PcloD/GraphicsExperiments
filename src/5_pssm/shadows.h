@@ -38,6 +38,8 @@ private:
 	glm::mat4 m_proj_matrices[MAX_FRUSTUM_SPLITS]; // crop * proj * light_view * inv_view
 
 public:
+	bool m_stable_pssm = true;
+
 	Shadows();
 	~Shadows();
 	void initialize(RenderDevice* device, ShadowSettings settings, Camera* camera, int _width, int _height, glm::vec3 dir);
