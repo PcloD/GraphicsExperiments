@@ -14,8 +14,6 @@
 #include <renderer.h>
 #include <memory>
 
-#define CAMERA_SPEED 0.01f
-#define CAMERA_SENSITIVITY 0.02f
 #define CAMERA_ROLL 0.0
 
 class GraphicsDemo : public dw::Application
@@ -24,13 +22,25 @@ private:
     float m_heading_speed = 0.0f;
     float m_sideways_speed = 0.0f;
     bool m_mouse_look = false;
-	bool m_show_scene_window = false;
+	bool m_show_debug_window = false;
+	float m_camera_sensitivity = 0.02f;
+	float m_camera_speed = 0.01f;
     Camera* m_camera;
 	dw::Scene* m_scene;
 	dw::Renderer* m_renderer;
 
-
 protected:
+	void debug_window()
+	{
+		ImGui::Begin("Debug");
+
+		ImGui::DragFloat3("Light Direction", &m_renderer->per_scene_uniform()->directionalLight.direction.x);
+		ImGui::ColorPicker3("Light Color", &m_renderer->per_scene_uniform()->directionalLight.color.x);
+		ImGui::InputFloat("Camera Sensitivity", &m_camera_sensitivity);
+		ImGui::InputFloat("Camera Speed", &m_camera_speed);
+
+		ImGui::End();
+	}
 	
     bool init(int argc, const char* argv[]) override
     {
@@ -55,6 +65,9 @@ protected:
 
     void update(double delta) override
     {
+		if (m_show_debug_window)
+			debug_window();
+
 		update_camera();
 		m_renderer->render(m_camera, m_width, m_height, nullptr);
 		m_device.bind_framebuffer(nullptr);
@@ -70,20 +83,20 @@ protected:
     void key_pressed(int code) override
     {
         if(code == GLFW_KEY_W)
-            m_heading_speed = CAMERA_SPEED;
+            m_heading_speed = m_camera_speed;
         else if(code == GLFW_KEY_S)
-            m_heading_speed = -CAMERA_SPEED;
+            m_heading_speed = -m_camera_speed;
         
         if(code == GLFW_KEY_A)
-            m_sideways_speed = -CAMERA_SPEED;
+            m_sideways_speed = -m_camera_speed;
         else if(code == GLFW_KEY_D)
-            m_sideways_speed = CAMERA_SPEED;
+            m_sideways_speed = m_camera_speed;
         
         if(code == GLFW_KEY_E)
             m_mouse_look = true;
 
 		if (code == GLFW_KEY_H)
-			m_show_scene_window = !m_show_scene_window;
+			m_show_debug_window = !m_show_debug_window;
     }
     
     void key_released(int code) override
@@ -106,9 +119,9 @@ protected:
         if(m_mouse_look)
         {
             // Activate Mouse Look
-            m_camera->set_rotatation_delta(glm::vec3((float)(m_mouse_delta_y * CAMERA_SENSITIVITY * m_delta),
-                                            (float)(m_mouse_delta_x * CAMERA_SENSITIVITY * m_delta),
-                                            (float)(CAMERA_ROLL * CAMERA_SENSITIVITY * m_delta)));
+            m_camera->set_rotatation_delta(glm::vec3((float)(m_mouse_delta_y * m_camera_sensitivity * m_delta),
+                                            (float)(m_mouse_delta_x * m_camera_sensitivity * m_delta),
+                                            (float)(CAMERA_ROLL * m_camera_sensitivity * m_delta)));
         }
         else
         {
