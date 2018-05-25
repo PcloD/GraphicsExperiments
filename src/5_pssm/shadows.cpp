@@ -6,15 +6,20 @@
 
 Shadows::Shadows()
 {
-	m_shadow_maps = nullptr;
-
 	for (int i = 0; i < 8; i++)
+	{
+		m_shadow_maps[i] = nullptr;
 		m_shadow_fbos[i] = nullptr;
+	}
 }
 
 Shadows::~Shadows()
 {
-
+	for (int i = 0; i < 8; i++)
+	{
+		m_device->destroy(m_shadow_maps[i]);
+		m_device->destroy(m_shadow_fbos[i]);
+	}
 }
 
 FrustumSplit* Shadows::frustum_splits()
@@ -29,12 +34,19 @@ glm::mat4 Shadows::split_view_proj(int i)
 
 void Shadows::initialize(RenderDevice* device, ShadowSettings settings, Camera* camera, int _width, int _height, glm::vec3 dir)
 {
+	m_device = device;
 	m_settings = settings;
 
 	if (m_shadow_maps)
-		device->destroy(m_shadow_maps);
+	{
+		for (int i = 0; i < 8; i++)
+		{
+			device->destroy(m_shadow_maps[i]);
+			device->destroy(m_shadow_fbos[i]);
+		}
+	}
 
-	Texture2DArrayCreateDesc desc;
+	/*Texture2DArrayCreateDesc desc;
 	DW_ZERO_MEMORY(desc);
 
 	desc.array_slices = m_settings.split_count;
@@ -43,7 +55,18 @@ void Shadows::initialize(RenderDevice* device, ShadowSettings settings, Camera* 
 	desc.width = m_settings.shadow_map_size;
 	desc.mipmap_levels = 1;
 	
-	m_shadow_maps = device->create_texture_2d_array(desc);
+	m_shadow_maps = device->create_texture_2d_array(desc);*/
+
+	for (int i = 0; i < 8; i++)
+	{
+		Texture2DCreateDesc desc;
+		DW_ZERO_MEMORY(desc);
+
+		desc.format = TextureFormat::D32_FLOAT_S8_UINT;
+		desc.height = m_settings.shadow_map_size;
+		desc.width = m_settings.shadow_map_size;
+		desc.mipmap_levels = 1;
+	}
 
 	for (int i = 0; i < 8; i++)
 	{
@@ -54,13 +77,13 @@ void Shadows::initialize(RenderDevice* device, ShadowSettings settings, Camera* 
 		}
 	}
 
-	for (int i = 0; i < desc.array_slices; i++)
+	for (int i = 0; i < m_settings.split_count; i++)
 	{
 		DepthStencilTargetDesc ds_desc;
 
 		ds_desc.arraySlice = i;
 		ds_desc.mipSlice = 0;
-		ds_desc.texture = m_shadow_maps;
+		ds_desc.texture = m_shadow_maps[i];
 		
 		FramebufferCreateDesc fbo_desc;
 

@@ -29,10 +29,12 @@ struct ShadowSettings
 class Shadows
 {
 private:
-	Texture2D* m_shadow_maps;
+	//Texture2D* m_shadow_maps;
+	Texture2D * m_shadow_maps[MAX_FRUSTUM_SPLITS];
 	Framebuffer* m_shadow_fbos[MAX_FRUSTUM_SPLITS];
 	ShadowSettings m_settings;
 	FrustumSplit m_splits[MAX_FRUSTUM_SPLITS];
+	RenderDevice* m_device;
 	glm::mat4 m_light_view;
 	glm::mat4 m_crop_matrices[MAX_FRUSTUM_SPLITS]; // crop * proj * view
 	glm::mat4 m_proj_matrices[MAX_FRUSTUM_SPLITS]; // crop * proj * light_view * inv_view
