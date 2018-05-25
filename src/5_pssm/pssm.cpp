@@ -18,7 +18,7 @@
 
 #include <Macros.h>
 #include <debug_draw.h>
-#include "shadows.h"
+#include <shadows.h>
 
 #define CAMERA_SPEED 0.05f
 #define CAMERA_SENSITIVITY 0.02f

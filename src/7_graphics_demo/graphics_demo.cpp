@@ -15,6 +15,7 @@
 #include <memory>
 #include <shadows.h>
 #include <debug_draw.h>
+#include <imgui_helpers.h>
 
 #define CAMERA_ROLL 0.0
 
@@ -25,8 +26,8 @@ private:
     float m_sideways_speed = 0.0f;
     bool m_mouse_look = false;
 	bool m_show_debug_window = false;
-	float m_camera_sensitivity = 0.02f;
-	float m_camera_speed = 0.01f;
+	float m_camera_sensitivity = 0.5f;
+	float m_camera_speed = 0.1f;
     Camera* m_camera;
 	Camera* m_debug_camera;
 	dw::Scene* m_scene;
@@ -39,6 +40,7 @@ private:
 	bool  show_shadow_frustum;
 	bool  show_frustum_splits;
 	bool  debug_mode;
+	float m_light_intensity = 20.0f;
 
 protected:
 	void debug_window()
@@ -49,6 +51,7 @@ protected:
 		ImGui::ColorPicker3("Light Color", &m_renderer->per_scene_uniform()->directionalLight.color.x);
 		ImGui::InputFloat("Camera Sensitivity", &m_camera_sensitivity);
 		ImGui::InputFloat("Camera Speed", &m_camera_speed);
+		ImGui::InputFloat("Light Intensity", &m_light_intensity);
 
 		ImGui::End();
 	}
@@ -92,18 +95,15 @@ protected:
 
 		m_shadows = new Shadows();
 		m_shadows->initialize(&m_device, m_shadow_settings, m_camera, m_width, m_height, direction);
+
+		m_renderer->per_scene_uniform()->directionalLight.direction = glm::vec4(direction, 1.0f);
+		m_renderer->per_scene_uniform()->directionalLight.color.w = m_light_intensity;
 		
 		return m_debug_renderer.init(&m_device);
     }
 
 	void render_shadow_debug()
 	{
-		m_device.bind_framebuffer(nullptr);
-		m_device.set_viewport(m_width, m_height, 0, 0);
-
-		float clear[] = { 0.3f, 0.3f, 0.3f, 1.0f };
-		m_device.clear_framebuffer(ClearTarget::ALL, clear);
-
 		for (int i = 0; i < m_shadow_settings.split_count; i++)
 		{
 			FrustumSplit& split = m_shadows->frustum_splits()[i];
@@ -141,7 +141,7 @@ protected:
 			ImGui::InputInt("Shadow Map Size", &m_shadow_settings.shadow_map_size);
 			ImGui::InputFloat("Lambda", &m_shadow_settings.lambda);
 			ImGui::DragFloat3("Direction", &direction.x, 0.1f);
-
+	
 			if (ImGui::Button("Reset"))
 			{
 				m_shadows->initialize(&m_device, m_shadow_settings, m_camera, m_width, m_height, direction);
@@ -163,7 +163,10 @@ protected:
 		update_camera();
 
 		m_shadows->update(m_camera, direction);
-		//m_renderer->render(debug_mode ? m_debug_camera : m_camera, m_width, m_height, nullptr);
+
+		m_renderer->per_scene_uniform()->directionalLight.direction = glm::vec4(direction, 1.0f);
+		m_renderer->per_scene_uniform()->directionalLight.color.w = m_light_intensity;
+		m_renderer->render(debug_mode ? m_debug_camera : m_camera, m_width, m_height, m_shadows, nullptr);
 
 		render_shadow_debug();
 
