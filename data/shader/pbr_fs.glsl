@@ -20,14 +20,34 @@ struct DirectionalLight
 // UNIFORM BUFFERS --------------------------------------------------
 // ------------------------------------------------------------------
 
+#define MAX_SHADOW_FRUSTUM 8
+
+struct ShadowFrustum
+{
+	mat4  shadowMatrix;
+	float farPlane;
+};
+
+layout (std140) uniform u_PerFrame //#binding 0
+{ 
+	mat4 		  lastViewProj;
+	mat4 		  viewProj;
+	mat4 		  invViewProj;
+	mat4 		  projMat;
+	mat4 		  viewMat;
+	vec4 		  viewPos;
+	vec4 		  viewDir;
+	int			  numCascades;
+	ShadowFrustum shadowFrustums[MAX_SHADOW_FRUSTUM];
+};
+
 layout (std140) uniform u_PerEntity //#binding 1
 {
 	mat4 mvpMat;
+	mat4 lastMvpMat;
 	mat4 modalMat;	
 	vec4 worldPos;
-	vec4 metalRough;
 };
-
 
 layout (std140) uniform u_PerScene //#binding 2
 {
@@ -54,6 +74,7 @@ uniform sampler2D s_Roughness; //#slot 3
 uniform samplerCube s_IrradianceMap; //#slot 4
 uniform samplerCube s_PrefilteredMap; //#slot 5
 uniform sampler2D s_BRDF; //#slot 6
+uniform sampler2DArray s_ShadowMap; //#slot 7
 
 // ------------------------------------------------------------------
 // INPUT VARIABLES  -------------------------------------------------
@@ -167,7 +188,7 @@ void main()
 
 		// Radiance -----------------------------------------------------------------
 
-		vec3 Li = directionalLight.color.xyz * 20;
+		vec3 Li = directionalLight.color.xyz * directionalLight.color.w;
 
 		// --------------------------------------------------------------------------
 
